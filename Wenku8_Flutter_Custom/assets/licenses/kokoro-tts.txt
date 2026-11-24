@@ -1,0 +1,22 @@
+Bundled offline TTS engine and model
+====================================
+
+sherpa-onnx (Flutter plugin and native runtime)
+  Copyright (c) 2024 Xiaomi Corporation
+  License: Apache License 2.0
+  https://github.com/k2-fsa/sherpa-onnx
+
+Kokoro-82M-v1.1-zh (kokoro-int8-multi-lang-v1_1)
+  Upstream: https://huggingface.co/hexgrad/Kokoro-82M-v1.1-zh
+  License: Apache License 2.0 (the full upstream LICENSE is bundled at
+  assets/models/tts/kokoro/LICENSE and is shipped inside the app).
+  The model card credits LongMaoData for the permissively provided Chinese
+  training data; no attribution notice beyond the Apache-2.0 license text is
+  required by the upstream model card.
+
+Bundled voice IDs used by this app (from the model's id2speaker metadata):
+  zf_001 / sid 3  - Chinese female, shown as 晴岚
+  zm_010 / sid 59 - Chinese male, shown as 景澈
+
+The complete upstream LICENSE and README.md are copied into
+assets/models/tts/kokoro/ and shipped with the app.

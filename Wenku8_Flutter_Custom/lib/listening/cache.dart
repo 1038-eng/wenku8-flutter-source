@@ -6,6 +6,7 @@ import 'edge_tts.dart';
 import 'models.dart';
 import 'languages.dart';
 import 'custom_tts.dart';
+import 'local_speech.dart';
 import '../network_status.dart';
 
 abstract interface class SpeechAudioSource {
@@ -51,10 +52,13 @@ class SpeechAudioCache implements SpeechAudioSource, SpeechLanguageVoiceSource {
     this.customSpeech,
     this.network,
     CustomSpeechClient? customClient,
-  }) : customClient = customClient ?? CustomSpeechClient();
+    LocalSpeechClient? localClient,
+  }) : customClient = customClient ?? CustomSpeechClient(),
+       localClient = localClient ?? LocalSpeechClient();
   final CustomSpeechSettings? customSpeech;
   final NetworkStatus? network;
   final CustomSpeechClient customClient;
+  final LocalSpeechClient localClient;
   final Directory directory;
   final EdgeSpeechClient edge;
   static const system = MethodChannel('org.mewx.wenku8/system_speech');
@@ -69,12 +73,18 @@ class SpeechAudioCache implements SpeechAudioSource, SpeechLanguageVoiceSource {
   static Future<SpeechAudioCache> forApp({
     CustomSpeechSettings? customSpeech,
     NetworkStatus? network,
-  }) async => SpeechAudioCache(
-    Directory('${(await getTemporaryDirectory()).path}/listening-audio-v1'),
-    EdgeSpeechClient(),
-    customSpeech: customSpeech,
-    network: network,
-  );
+  }) async {
+    // App 生命周期内只创建一个本地客户端：模型解压与 sherpa 引擎都在
+    // 首次使用时惰性初始化并缓存，避免每次合成重新加载百 MB 级模型。
+    final local = LocalSpeechClient();
+    return SpeechAudioCache(
+      Directory('${(await getTemporaryDirectory()).path}/listening-audio-v1'),
+      EdgeSpeechClient(),
+      customSpeech: customSpeech,
+      network: network,
+      localClient: local,
+    );
+  }
 
   Future<T> _native<T>(Future<T> Function() action) {
     final next = _nativeQueue.then((_) => action());
@@ -93,6 +103,9 @@ class SpeechAudioCache implements SpeechAudioSource, SpeechLanguageVoiceSource {
     if (preferred.source == ListeningSource.edge) return onlineVoices();
     if (preferred.source == ListeningSource.custom) {
       return Future.value([preferred]);
+    }
+    if (preferred.source == ListeningSource.local) {
+      return Future.value(builtinLocalVoices);
     }
     return _native(() async {
       final raw =
@@ -234,7 +247,11 @@ class SpeechAudioCache implements SpeechAudioSource, SpeechLanguageVoiceSource {
         );
       }
       await directory.create(recursive: true);
-      final extension = voice.source != ListeningSource.system ? 'mp3' : 'wav';
+      final extension =
+          (voice.source == ListeningSource.system ||
+              voice.source == ListeningSource.local)
+          ? 'wav'
+          : 'mp3';
       final file = File('${directory.path}/$key.$extension');
       if (await file.exists() && await file.length() > 100) {
         await file.setLastModified(DateTime.now());
@@ -262,6 +279,13 @@ class SpeechAudioCache implements SpeechAudioSource, SpeechLanguageVoiceSource {
             text,
             config,
             cancellation,
+          );
+          cancellation.check();
+          await temporary.writeAsBytes(data, flush: true);
+        } else if (voice.source == ListeningSource.local) {
+          // 不经过网络、不经过 MethodChannel；断网时也必须可用。
+          final data = await cancellation.wait(
+            localClient.synthesize(text, voice, cancellation),
           );
           cancellation.check();
           await temporary.writeAsBytes(data, flush: true);

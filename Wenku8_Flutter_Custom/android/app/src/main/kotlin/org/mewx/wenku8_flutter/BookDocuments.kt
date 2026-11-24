@@ -198,7 +198,7 @@ class BookDocuments internal constructor(
                 val source = bookTextFile(call.argument<String>("path") ?: "")
                 val staging = if (imports.initialized && source.parentFile == importRoot.canonicalFile) importRoot else root
                 BookArchiveImport(staging).apply { documents = BookMarkupImport(staging, BookPdfImport(activity, staging)::read) }
-                    .prepare(call.argument<String>("name") ?: "", source)
+                    .prepare(call.argument<String>("name") ?: "", BookDocumentInput(source))
             }
             "readSync" -> background(result) {
                 val snapshot = File(root, "cloud-before.wenku8sync")

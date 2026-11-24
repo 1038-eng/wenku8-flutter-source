@@ -14,6 +14,7 @@ import 'controller.dart';
 import 'models.dart';
 import 'languages.dart';
 import 'custom_tts_page.dart';
+import 'local_speech_page.dart';
 import 'system_tts_page.dart';
 import 'listening_speed_control.dart';
 import 'reader_target.dart';
@@ -105,6 +106,17 @@ class _ListeningPanelState extends State<ListeningPanel> {
       context: context,
       reduceMotion: MediaQuery.disableAnimationsOf(context),
       builder: (_) => SystemSpeechEnginesPanel(
+        selected: widget.controller.snapshot.value.voice,
+      ),
+    );
+    if (voice != null && mounted) await _voice(voice);
+  }
+
+  Future<void> _localVoice() async {
+    final voice = await showJellySheet<SpeechVoice>(
+      context: context,
+      reduceMotion: MediaQuery.disableAnimationsOf(context),
+      builder: (_) => LocalSpeechVoicesPanel(
         selected: widget.controller.snapshot.value.voice,
       ),
     );
@@ -293,6 +305,7 @@ class _ListeningPanelState extends State<ListeningPanel> {
               '当前音源 · ${switch (state.voice.source) {
                 ListeningSource.system => '系统引擎',
                 ListeningSource.custom => '自定义接口',
+                ListeningSource.local => '内置离线',
                 _ => '自然在线',
               }} · ${own ? state.outputVoice.label : state.voice.label}',
               style: TextStyle(
@@ -744,10 +757,17 @@ class _ListeningPanelState extends State<ListeningPanel> {
                     '系统引擎',
                     textAlign: TextAlign.center,
                   ),
+                  ListeningSource.local: const AppText(
+                    '内置离线',
+                    textAlign: TextAlign.center,
+                  ),
                 },
                 onValueChanged: (source) async {
                   if (source == ListeningSource.edge) {
                     await _voice(defaultEdgeVoice);
+                  }
+                  if (source == ListeningSource.local) {
+                    await _voice(localFemaleVoice);
                   }
                   if (source == ListeningSource.system) await _systemEngine();
                   if (source == ListeningSource.custom) {
@@ -764,6 +784,8 @@ class _ListeningPanelState extends State<ListeningPanel> {
               AppText(
                 source == ListeningSource.system
                     ? '使用手机安装的 TTS 引擎，语音数据与联网方式由引擎管理。'
+                    : source == ListeningSource.local
+                    ? '内置离线模型，无需联网，不依赖外部 TTS 引擎。'
                     : source == ListeningSource.custom
                     ? '使用你配置的 Microsoft SSML 兼容接口。'
                     : 'Edge 神经网络音色 · 免费，无需登录。未缓存语段需联网生成；已生成语音可直接复用。',
@@ -774,6 +796,11 @@ class _ListeningPanelState extends State<ListeningPanel> {
                 ),
               ),
               const SizedBox(height: 8),
+              GlassTextButton(
+                key: const ValueKey('listening-local-voices'),
+                onPressed: _localVoice,
+                child: const AppText('选择内置离线音色'),
+              ),
               GlassTextButton(
                 key: const ValueKey('listening-system-engines'),
                 onPressed: _systemEngine,
@@ -940,9 +967,12 @@ class _LanguageVoicePickerState extends State<_LanguageVoicePicker> {
                               voice.label,
                               style: const TextStyle(fontSize: 14),
                             ),
-                            if (voice.source == ListeningSource.system)
+                            if (voice.source == ListeningSource.system ||
+                                voice.source == ListeningSource.local)
                               AppText(
-                                '${voice.locale} · ${voice.offline ? '可离线' : '需要网络'}',
+                                voice.source == ListeningSource.local
+                                    ? '内置离线 · 无需联网'
+                                    : '${voice.locale} · ${voice.offline ? '可离线' : '需要网络'}',
                                 style: const TextStyle(fontSize: 12),
                               ),
                           ],

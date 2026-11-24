@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import '../reader_content.dart';
 
-enum ListeningSource { edge, system, custom }
+enum ListeningSource { edge, system, custom, local }
 
 enum ListeningPhase { stopped, preparing, playing, paused, completed, failed }
 
@@ -47,6 +47,7 @@ class SpeechVoice {
     source: switch (json['source']) {
       'system' => ListeningSource.system,
       'custom' => ListeningSource.custom,
+      'local' => ListeningSource.local,
       _ => ListeningSource.edge,
     },
     locale: json['locale'] is String ? json['locale'] : 'zh-CN',
@@ -105,7 +106,39 @@ const builtinChineseEdgeVoices = <SpeechVoice>[
     source: ListeningSource.edge,
     locale: 'zh-CN-shaanxi',
   ),
+  // 粤语（zh-HK）没有可用的离线模型，只能走 Edge 在线音色。
+  SpeechVoice(
+    id: 'zh-HK-WanLungNeural',
+    label: '云龙 · 粤语男声',
+    source: ListeningSource.edge,
+    locale: 'zh-HK',
+  ),
+  SpeechVoice(
+    id: 'zh-HK-HiuGaaiNeural',
+    label: '晓佳 · 粤语女声',
+    source: ListeningSource.edge,
+    locale: 'zh-HK',
+  ),
 ];
+
+/// 随 APK 内置的 Kokoro v1.1 离线音色（Apache-2.0）。两个音色共用一套
+/// 模型，只靠 sid 区分；id 必须唯一，缓存 key 已包含 voice.source.name，
+/// 因此 local 与 edge/system/custom 不会互相污染。
+const localFemaleVoice = SpeechVoice(
+  id: 'kokoro-zf-001',
+  label: '晴岚 · 内置离线女声',
+  source: ListeningSource.local,
+  locale: 'zh-CN',
+  offline: true,
+);
+const localMaleVoice = SpeechVoice(
+  id: 'kokoro-zm-010',
+  label: '景澈 · 内置离线男声',
+  source: ListeningSource.local,
+  locale: 'zh-CN',
+  offline: true,
+);
+const builtinLocalVoices = <SpeechVoice>[localFemaleVoice, localMaleVoice];
 
 /// Installed engines are used exclusively through the host's public TTS API.
 bool supportedSystemSpeechEngine(String? engine) =>

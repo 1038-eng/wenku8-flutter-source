@@ -20,6 +20,95 @@ import 'local_series_actions.dart';
 import 'local_scan_page.dart';
 import 'local_scan_selection.dart';
 
+/// Prepare and import a batch of local documents one by one.
+///
+/// The native picker hands over tokens/references for large documents (PDF,
+/// archives, markup...). They must be staged and converted with
+/// [BookDocuments.prepareBook] before the platform-independent importer can
+/// read them; skipping this step produced "需先生成阅读排版" failures.
+Future<LocalImportReport> importLocalDocuments({
+  required List<BookDocumentSelection> selections,
+  required BookDocuments documents,
+  required LocalBookStore books,
+  Future<Novel> Function(String name, String path)? importFile,
+  Future<Novel> Function(BookDocumentSelection selected)? importSelection,
+  bool releaseSources = false,
+  void Function(Iterable<BookDocumentSelection>)? onCleanupFailed,
+  void Function(int done, int total)? onProgress,
+}) async {
+  final bookIds = <int>[];
+  final failures = <LocalImportFailure>[];
+  final notices = <LocalImportNotice>[];
+  final stagedPaths = <BookDocumentSelection>[];
+  var added = 0;
+  var existing = 0;
+  var done = 0;
+  for (final source in selections) {
+    if (source.error case final message?) {
+      failures.add((name: source.name, message: message));
+    } else {
+      try {
+        final staged = await documents.stageForImport(source);
+        final prepared = await documents.prepareBook(staged);
+        for (final item in prepared) {
+          if (item.error case final message?) {
+            failures.add((name: item.name, message: message));
+            continue;
+          }
+          if (item.path == null && item.reference == null) {
+            failures.add((name: item.name, message: '无法准备这本书'));
+            continue;
+          }
+          final before = books.books.map((book) => book.id).toSet();
+          final Future<Novel> importing;
+          if (importSelection != null) {
+            importing = importSelection(item);
+          } else if (importFile != null) {
+            importing = importFile(item.name, item.path!);
+          } else {
+            throw StateError('缺少本地文档导入回调');
+          }
+          final novel = await importing;
+          bookIds.add(novel.id);
+          if (before.contains(novel.id)) {
+            existing++;
+          } else {
+            added++;
+          }
+          if (item.path != null && item.path != source.path) {
+            stagedPaths.add(item);
+          }
+        }
+      } catch (error) {
+        failures.add((name: source.name, message: '$error'));
+      }
+    }
+    done++;
+    onProgress?.call(done, selections.length);
+  }
+  if (stagedPaths.isNotEmpty) {
+    try {
+      await documents.releaseBooks(stagedPaths);
+    } catch (_) {
+      onCleanupFailed?.call(stagedPaths);
+    }
+  }
+  if (releaseSources && selections.isNotEmpty) {
+    try {
+      await documents.releaseBooks(selections);
+    } catch (_) {
+      onCleanupFailed?.call(selections);
+    }
+  }
+  return LocalImportReport(
+    bookIds: bookIds,
+    added: added,
+    existing: existing,
+    failures: failures,
+    notices: notices,
+  );
+}
+
 /// Category writes follow the finite selected batch, not every parsed member.
 /// Books are durable first; a failed assignment is reported without reimporting
 /// or deleting them. Repeated books retain their last observed target category.

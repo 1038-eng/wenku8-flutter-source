@@ -694,6 +694,9 @@ class ListeningController {
         // CUSTOM: full built-in male/female catalogue instead of two voices.
         return builtinChineseEdgeVoices;
       }
+      if (preferred.source == ListeningSource.local && code == 'zh') {
+        return builtinLocalVoices;
+      }
       throw const SpeechFailure('音色列表暂时不可用，请重试');
     }
   }
