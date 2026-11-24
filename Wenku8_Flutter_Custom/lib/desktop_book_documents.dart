@@ -29,6 +29,8 @@ class DesktopBookDocuments {
     return _extensions.contains(name.substring(dot + 1).toLowerCase());
   }
 
+  static const _powershell =
+      r'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe';
   static Directory? _importRoot;
   static String? _scanPath;
   static bool _scanAutomatic = false;
@@ -48,6 +50,40 @@ class DesktopBookDocuments {
     _scanAutomatic = prefs.getBool('desktop.scan.automatic') ?? false;
     _scanFormats = prefs.getStringList('desktop.scan.formats');
     BookDocuments.channel.setMethodCallHandler(_handle);
+  }
+
+  /// Run a PowerShell script from a file instead of -Command: avoids Windows
+  /// command-line quoting from mangling $variables and the multi-select filter.
+  static Future<ProcessResult> _runPs(
+    String script,
+    List<String> arguments, {
+    bool sta = false,
+  }) async {
+    final root = _importRoot!;
+    final file = File(
+      '${root.path}${Platform.pathSeparator}ps-${DateTime.now().microsecondsSinceEpoch}.ps1',
+    );
+    await file.writeAsString(script, flush: true);
+    try {
+      return await Process.run(
+        _powershell,
+        [
+          '-NoProfile',
+          '-ExecutionPolicy',
+          'Bypass',
+          if (sta) '-STA',
+          '-File',
+          file.path,
+          ...arguments,
+        ],
+        stdoutEncoding: utf8,
+        stderrEncoding: utf8,
+      );
+    } finally {
+      try {
+        await file.delete();
+      } catch (_) {}
+    }
   }
 
   static Map<String, dynamic>? _folderInfo() {
@@ -70,11 +106,7 @@ if ($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
   [Console]::WriteLine([Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($d.SelectedPath)))
 }
 ''';
-    final result = await Process.run(
-      'powershell.exe',
-      ['-NoProfile', '-STA', '-Command', script],
-      stdoutEncoding: utf8,
-    );
+    final result = await _runPs(script, const [], sta: true);
     if (result.exitCode != 0) return null;
     final line = (result.stdout as String).trim();
     if (line.isEmpty) return null;
@@ -222,7 +254,7 @@ if ($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
     final script = r'''
 Add-Type -AssemblyName System.Windows.Forms
 $d = New-Object System.Windows.Forms.OpenFileDialog
-$d.Multiselect = $ARGS[0] -eq '1'
+$d.Multiselect = $args[0] -eq '1'
 $d.Filter = "Books|$FILTER|$FILTER|All files|*.*"
 if ($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
   foreach ($f in $d.FileNames) {
@@ -231,11 +263,10 @@ if ($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
 }
 '''
         .replaceAll('\$FILTER', filter);
-    final result = await Process.run(
-      'powershell.exe',
-      ['-NoProfile', '-STA', '-Command', script.replaceFirst('\$ARGS[0]', allowMultiple ? "'1'" : "'0'")],
-      stdoutEncoding: utf8,
-      stderrEncoding: utf8,
+    final result = await _runPs(
+      script,
+      [if (allowMultiple) '1' else '0'],
+      sta: true,
     );
     if (result.exitCode != 0) {
       throw PlatformException(
@@ -257,15 +288,11 @@ if ($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
     } on FormatException {
       final script = r'''
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
-$bytes = [IO.File]::ReadAllBytes($ARGS[0])
+$bytes = [IO.File]::ReadAllBytes($args[0])
 $text = [Text.Encoding]::GetEncoding(936).GetString($bytes)
 [Console]::WriteLine([Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($text)))
 ''';
-      final result = await Process.run(
-        'powershell.exe',
-        ['-NoProfile', '-Command', script, path],
-        stdoutEncoding: utf8,
-      );
+      final result = await _runPs(script, [path]);
       if (result.exitCode != 0) throw StateError('无法识别文本编码');
       return utf8.decode(base64.decode((result.stdout as String).trim()));
     }

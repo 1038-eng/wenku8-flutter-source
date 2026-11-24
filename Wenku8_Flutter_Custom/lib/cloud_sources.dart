@@ -279,7 +279,7 @@ String cloudFailureMessage(Object failure) => switch (failure) {
     e.message ?? '文件操作失败，请重新选择原书',
   FileSystemException e =>
     e.osError?.errorCode == 28 ? '存储空间不足，请清理空间后重新导入' : '无法读取或保存原书，请检查文件与存储空间',
-  _ => '操作未完成，请重试；本地书籍已保留',
+  Object e => '操作未完成：$e；本地书籍已保留',
 };
 
 class CloudBookEntry {
