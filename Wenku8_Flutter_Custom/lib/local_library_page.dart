@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:desktop_drop/desktop_drop.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'app_interactions.dart';
 import 'app_ui.dart';
@@ -24,6 +25,7 @@ import 'library_toolbar.dart';
 import 'library_reflow.dart';
 import 'local_books.dart';
 import 'local_book_importer.dart';
+import 'local_platform.dart';
 import 'local_library_preferences.dart';
 import 'local_series_editor.dart';
 import 'local_book_removal.dart';
@@ -806,7 +808,7 @@ class _LocalLibraryPageState extends State<LocalLibraryPage>
   @override
   Widget build(BuildContext context) {
     final organization = _organization;
-    final body = GlassHeaderLayout(
+    Widget body = GlassHeaderLayout(
       showHeader: widget.showHeader,
       header: _header(context),
       body: CompactMainPageControls(
@@ -1073,6 +1075,25 @@ class _LocalLibraryPageState extends State<LocalLibraryPage>
         ),
       ),
     );
+    if (LocalPlatform.desktop) {
+      body = DropTarget(
+        enable: !_importer.busy,
+        onDragDone: (details) {
+          final files = details.files
+              .whereType<DropItemFile>()
+              .map((item) => BookDocumentSelection(
+                    name: item.name.isEmpty
+                        ? item.path.split(RegExp(r'[\\/]')).last
+                        : item.name,
+                    path: item.path,
+                  ))
+              .toList();
+          if (files.isEmpty || !mounted) return;
+          _importer.run(context, selectedBooks: files);
+        },
+        child: body,
+      );
+    }
     return widget.showHeader ? Scaffold(body: Atmosphere(child: body)) : body;
   }
 }

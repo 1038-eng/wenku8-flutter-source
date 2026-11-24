@@ -14,6 +14,7 @@ import 'app_repository.dart';
 import 'catalog.dart';
 import 'legacy_wenku_repository.dart';
 import 'library_state.dart';
+import 'desktop_book_documents.dart';
 import 'local_platform.dart';
 import 'local_series_actions.dart';
 import 'listening/audio_output.dart';
@@ -53,6 +54,7 @@ import 'reading_moments_ui.dart';
 
 Future<void> main() async {
   final binding = WidgetsFlutterBinding.ensureInitialized();
+  if (LocalPlatform.desktop) await DesktopBookDocuments.install();
   registerAppLicenses();
   TouchSamplingPolicy(binding);
   // Do not hold the first frame while Android is applying window insets.
@@ -82,8 +84,13 @@ Future<void> main() async {
   final WenkuAccount? account = LocalPlatform.fileActions
       ? WenkuAccount()
       : null;
-  const remote = LegacyWenkuRepository();
-  final repository = LocalPlatform.fileActions
+  // Desktop keeps the local library but uses the bundled demo catalogue for
+  // discovery, so the first run never shows a network failure before any
+  // local books have been imported.
+  final NovelRepository remote = LocalPlatform.desktop
+      ? const DemoNovelRepository()
+      : const LegacyWenkuRepository();
+  final repository = LocalPlatform.localLibrary
       ? await openApplicationLibrary(remote: remote, network: network)
       : const DemoNovelRepository();
   if (repository is OfflineNovelRepository) {
@@ -780,7 +787,7 @@ class _NovelAppState extends State<NovelApp> with WidgetsBindingObserver {
                         ),
                       );
                       final repo = repository;
-                      if (LocalPlatform.fileActions &&
+                      if (LocalPlatform.localLibrary &&
                           repo is OfflineNovelRepository &&
                           repo.local != null) {
                         return BookOpenMonitor(

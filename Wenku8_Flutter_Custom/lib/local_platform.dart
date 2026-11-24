@@ -15,6 +15,16 @@ abstract final class LocalPlatform {
   static bool get ios => !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
   // Flutter-OH adds this enum value; the stable Android/iOS SDK does not.
   static bool get harmony => !kIsWeb && defaultTargetPlatform.name == 'ohos';
+  static bool get desktop =>
+      !kIsWeb &&
+      const {
+        TargetPlatform.windows,
+        TargetPlatform.macOS,
+        TargetPlatform.linux,
+      }.contains(defaultTargetPlatform);
+  /// Local books use the same store on every host; only the file transport
+  /// differs. Desktop gets its channel implementation in DesktopBookDocuments.
+  static bool get localLibrary => android || ios || harmony || desktop;
   static bool get website => ios || harmony;
   static bool get readerAppearance => android || ios || harmony;
   static bool get listening => android || ios || harmony;
