@@ -1,8 +1,10 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:archive/archive.dart';
 import 'package:archive/archive_io.dart';
 import 'package:flutter/services.dart';
+import 'package:pdfx/pdfx.dart';
 import 'package:html/parser.dart' show parse;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -27,6 +29,79 @@ class DesktopBookDocuments {
     final dot = name.lastIndexOf('.');
     if (dot < 0) return false;
     return _extensions.contains(name.substring(dot + 1).toLowerCase());
+  }
+
+  /// Direct-call API used by BookDocuments on desktop hosts. Bypasses the
+  /// MethodChannel entirely so there is no plugin-registration race.
+  static Future<void> ensureInstalled() async {
+    if (_importRoot == null) await install();
+  }
+
+  static Future<List<Map<String, dynamic>>> pickFiles({
+    required bool multiple,
+  }) async {
+    await ensureInstalled();
+    return [
+      for (final file in await _pick(allowMultiple: multiple))
+        {'name': _name(file), 'path': file, 'error': null},
+    ];
+  }
+
+  static Future<Map<String, dynamic>?> folderInfo() async {
+    await ensureInstalled();
+    return _folderInfo();
+  }
+
+  static Future<Map<String, dynamic>?> selectFolder() =>
+      _selectFolder();
+
+  static Future<Map<String, dynamic>> scan() async {
+    await ensureInstalled();
+    return _scanBooks();
+  }
+
+  static Future<List<String>> formats() async {
+    await ensureInstalled();
+    return _scanFormats ?? _extensions;
+  }
+
+  static Future<void> setFormats(List<String> values) async {
+    await ensureInstalled();
+    _scanFormats = values;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList('desktop.scan.formats', values);
+  }
+
+  static Future<void> setAutomatic(bool value) async {
+    await ensureInstalled();
+    _scanAutomatic = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('desktop.scan.automatic', value);
+  }
+
+  static Future<void> disconnect() async {
+    await ensureInstalled();
+    await configureScanFolder('');
+  }
+
+  static Future<Map<String, dynamic>> staged(String token) async {
+    await ensureInstalled();
+    final path = _scanTokens[token];
+    if (path == null) throw StateError('扫描结果已过期，请重新扫描');
+    return {'name': _name(path), 'path': path};
+  }
+
+  static Future<List<Map<String, dynamic>>> prepareDirect(
+    String name,
+    String path,
+  ) async {
+    await ensureInstalled();
+    return _prepare(name, path);
+  }
+
+  static Future<String> decodeDirect(String path) async {
+    await ensureInstalled();
+    return _decode(path);
   }
 
   static const _powershell =
@@ -314,16 +389,19 @@ $text = [Text.Encoding]::GetEncoding(936).GetString($bytes)
         {'name': name, 'path': path, 'error': null},
       ];
     }
-    if (const {'pdf', 'mobi', 'azw', 'azw3', 'prc'}.contains(ext)) {
+    if (const {'mobi', 'azw', 'azw3', 'prc'}.contains(ext)) {
       return [
         {
           'name': name,
           'path': null,
-          'error': 'Windows 版暂不支持 $ext，请用 TXT 或 EPUB',
+          'error': 'Windows 版暂不支持 $ext，请用 TXT / EPUB / PDF',
         },
       ];
     }
     try {
+      if (ext == 'pdf') {
+        return await _pdfToEpub(name, path, root);
+      }
       if (ext == 'zip') {
         return await _unpack(path, root);
       }
@@ -340,6 +418,105 @@ $text = [Text.Encoding]::GetEncoding(936).GetString($bytes)
       return [
         {'name': name, 'path': null, 'error': '$error'},
       ];
+    }
+  }
+
+  /// Render a PDF (typical comics are image-only) into the same EPUB shape the
+  /// Android PDFBox importer produces, so the shared reader opens it unchanged.
+  static Future<List<Map<String, dynamic>>> _pdfToEpub(
+    String name,
+    String path,
+    Directory root,
+  ) async {
+    const maxPages = 1000;
+    final document = await PdfDocument.openFile(path);
+    try {
+      final pages = document.pagesCount;
+      if (pages < 1 || pages > maxPages) {
+        throw StateError('PDF 页数需在 1–$maxPages 之间');
+      }
+      final archive = Archive();
+      void add(String name, List<int> bytes) =>
+          archive.addFile(ArchiveFile(name, bytes.length, bytes));
+      add('mimetype', utf8.encode('application/epub+zip'));
+      add(
+        'META-INF/container.xml',
+        utf8.encode(
+          '<container xmlns="urn:oasis:names:tc:opendocument:xmlns:container">'
+          '<rootfiles><rootfile full-path="content.opf" '
+          'media-type="application/oebps-package+xml"/></rootfiles></container>',
+        ),
+      );
+
+      final manifest = StringBuffer()
+        ..write(
+          '<item id="nav" href="nav.xhtml" '
+          'media-type="application/xhtml+xml" properties="nav"/>',
+        );
+      final spine = StringBuffer();
+      final nav = StringBuffer();
+      for (var index = 1; index <= pages; index++) {
+        final page = await document.getPage(index);
+        final image = await page.render(
+          width: page.width * 1.4,
+          height: page.height * 1.4,
+          format: PdfPageImageFormat.jpeg,
+          quality: 88,
+        );
+        await page.close();
+        if (image == null) throw StateError('第 $index 页渲染失败');
+        final imageName = 'image-$index.jpg';
+        add(imageName, image.bytes);
+        manifest.write(
+          '<item id="i$index" href="$imageName" media-type="image/jpeg"/>',
+        );
+        spine.write('<itemref idref="c$index"/>');
+        nav.write(
+          '<li><a href="c$index.xhtml">第 $index 页</a></li>',
+        );
+        add(
+          'c$index.xhtml',
+          utf8.encode(
+            '<html xmlns="http://www.w3.org/1999/xhtml"><body>'
+            '<img src="$imageName" style="width:100%"/>'
+            '</body></html>',
+          ),
+        );
+      }
+      final title = _stripExt(name)
+          .replaceAll('&', '&amp;')
+          .replaceAll('<', '&lt;')
+          .replaceAll('>', '&gt;');
+      add(
+        'content.opf',
+        utf8.encode(
+          '<package xmlns="http://www.idpf.org/2007/opf" version="3.0">'
+          '<metadata xmlns:dc="http://purl.org/dc/elements/1.1/">'
+          '<dc:title>$title</dc:title></metadata>'
+          '<manifest>$manifest</manifest><spine>$spine</spine></package>',
+        ),
+      );
+      add(
+        'nav.xhtml',
+        utf8.encode(
+          '<html xmlns="http://www.w3.org/1999/xhtml" '
+          'xmlns:epub="http://www.idpf.org/2007/ops"><body>'
+          '<nav epub:type="toc"><ol>$nav</ol></nav></body></html>',
+        ),
+      );
+      final bytes = ZipEncoder().encode(archive);
+      if (bytes.length > 512 * 1024 * 1024) {
+        throw StateError('转换后的 PDF 超过 512 MiB');
+      }
+      final target = File(
+        '${root.path}${Platform.pathSeparator}${_safeName(_stripExt(name))}.epub',
+      );
+      await target.writeAsBytes(bytes, flush: true);
+      return [
+        {'name': '${_stripExt(name)}.epub', 'path': target.path, 'error': null},
+      ];
+    } finally {
+      await document.close();
     }
   }
 

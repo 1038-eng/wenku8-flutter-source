@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'book_import_limits.dart';
+import 'desktop_book_documents.dart';
 import 'local_platform.dart';
 import 'portable_book_prepare.dart';
 
@@ -183,6 +184,16 @@ class BookDocuments {
     String name,
     String path,
   ) async {
+    if (LocalPlatform.desktop) {
+      return [
+        for (final value in await DesktopBookDocuments.prepareDirect(name, path))
+          (
+            name: value['name'] as String,
+            path: value['path'] as String?,
+            error: value['error'] as String?,
+          ),
+      ];
+    }
     final values = await channel.invokeListMethod<dynamic>('prepareBook', {
       'name': name,
       'path': path,
@@ -266,6 +277,10 @@ class BookDocuments {
   }
 
   Future<BookScanFolder?> scanFolderInfo() async {
+    if (LocalPlatform.desktop) {
+      final value = await DesktopBookDocuments.folderInfo();
+      return value == null ? null : BookScanFolder.fromMap(value);
+    }
     final value = await channel.invokeMapMethod<String, dynamic>(
       'scanFolderInfo',
     );
@@ -273,14 +288,19 @@ class BookDocuments {
   }
 
   Future<BookScanFolder?> selectScanFolder() async {
+    if (LocalPlatform.desktop) {
+      final value = await DesktopBookDocuments.selectFolder();
+      return value == null ? null : BookScanFolder.fromMap(value);
+    }
     final value = await channel.invokeMapMethod<String, dynamic>(
       'selectScanFolder',
     );
     return value == null ? null : BookScanFolder.fromMap(value);
   }
 
-  Future<void> setScanAutomatic(bool value) =>
-      channel.invokeMethod<void>('setScanAutomatic', {'value': value});
+  Future<void> setScanAutomatic(bool value) => LocalPlatform.desktop
+      ? DesktopBookDocuments.setAutomatic(value)
+      : channel.invokeMethod<void>('setScanAutomatic', {'value': value});
   Future<BookScanFolder?> selectAllScan() async {
     final value = await channel.invokeMapMethod<String, dynamic>(
       'selectAllScan',
@@ -288,23 +308,33 @@ class BookDocuments {
     return value == null ? null : BookScanFolder.fromMap(value);
   }
 
-  Future<void> disconnectScanFolder() =>
-      channel.invokeMethod<void>('disconnectScanFolder');
+  Future<void> disconnectScanFolder() => LocalPlatform.desktop
+      ? DesktopBookDocuments.disconnect()
+      : channel.invokeMethod<void>('disconnectScanFolder');
   Future<Set<String>> scanFormats() async {
+    if (LocalPlatform.desktop) {
+      return (await DesktopBookDocuments.formats()).toSet().map(bookFormatKey).toSet();
+    }
     final extensions = await channel.invokeListMethod<String>('scanFormats');
     return extensions == null
         ? bookFormatLabels.keys.toSet()
         : extensions.map((e) => bookFormatKey('book.$e')).toSet();
   }
 
-  Future<void> setScanFormats(Set<String> formats) =>
-      channel.invokeMethod<void>('setScanFormats', {
-        'extensions': bookFormatExtensions(formats).toList(),
-      });
+  Future<void> setScanFormats(Set<String> formats) async {
+    final extensions = bookFormatExtensions(formats).toList();
+    if (LocalPlatform.desktop) {
+      await DesktopBookDocuments.setFormats(extensions);
+      return;
+    }
+    await channel.invokeMethod<void>('setScanFormats', {
+      'extensions': extensions,
+    });
+  }
   Future<BookScanSnapshot> scanBooks() async {
-    final value = (await channel.invokeMapMethod<String, dynamic>(
-      'scanBooks',
-    ))!;
+    final value = LocalPlatform.desktop
+        ? await DesktopBookDocuments.scan()
+        : (await channel.invokeMapMethod<String, dynamic>('scanBooks'))!;
     return BookScanSnapshot(
       books: [
         for (final book in value['books'] as List)
@@ -324,10 +354,12 @@ class BookDocuments {
   }
 
   Future<BookDocumentSelection> stageScanBook(String token) async {
-    final value = (await channel.invokeMapMethod<String, dynamic>(
-      'stageScanBook',
-      {'token': token},
-    ))!;
+    final value = LocalPlatform.desktop
+        ? await DesktopBookDocuments.staged(token)
+        : (await channel.invokeMapMethod<String, dynamic>(
+            'stageScanBook',
+            {'token': token},
+          ))!;
     return BookDocumentSelection(
       name: value['name'] as String,
       path: value['path'] as String,
@@ -335,7 +367,9 @@ class BookDocuments {
   }
 
   Future<BookDocumentSelection> linkScanBook(String token) async =>
-      BookDocumentSelection.fromMap(
+      LocalPlatform.desktop
+      ? BookDocumentSelection.fromMap(await DesktopBookDocuments.staged(token))
+      : BookDocumentSelection.fromMap(
         (await channel.invokeMapMethod<String, dynamic>('linkScanBook', {
           'token': token,
         }))!,
@@ -362,6 +396,14 @@ class BookDocuments {
       channel.invokeMethod<void>('markScanBook', {'token': token});
   Future<void> finishBookScan() => channel.invokeMethod<void>('finishBookScan');
   Future<({String name, String path})?> pickBook() async {
+    if (LocalPlatform.desktop) {
+      final files = await DesktopBookDocuments.pickFiles(multiple: false);
+      if (files.isEmpty) return null;
+      return (
+        name: files.first['name'] as String,
+        path: files.first['path'] as String,
+      );
+    }
     final value = await channel.invokeMapMethod<String, dynamic>('pickBook');
     return value == null
         ? null
@@ -369,6 +411,13 @@ class BookDocuments {
   }
 
   Future<List<BookDocumentSelection>> pickBooks() async {
+    if (LocalPlatform.desktop) {
+      return [
+        for (final value
+            in await DesktopBookDocuments.pickFiles(multiple: true))
+          BookDocumentSelection.fromMap(value),
+      ];
+    }
     final values = await channel.invokeListMethod<dynamic>('pickBooks');
     return [
       for (final value in values ?? const [])
@@ -383,6 +432,7 @@ class BookDocuments {
   /// Select references, not copies of an entire library. Existing pickBooks
   /// callers retain their ready-to-read path contract.
   Future<List<BookDocumentSelection>> pickForImport() async {
+    if (LocalPlatform.desktop) return pickBooks();
     final values = await channel.invokeListMethod<dynamic>('pickBooks', {
       'deferred': true,
       'linkOriginals': true,
@@ -394,6 +444,7 @@ class BookDocuments {
   }
 
   Future<List<BookDocumentSelection>> pickCopiesForImport() async {
+    if (LocalPlatform.desktop) return pickBooks();
     final values = await channel.invokeListMethod<dynamic>('pickBooks', {
       'deferred': true,
     });
@@ -522,17 +573,21 @@ class BookDocuments {
   }
 
   Future<String> decodeText(String path, {String encoding = 'auto'}) async =>
-      (await channel.invokeMethod<String>('decodeText', {
-        'path': path,
-        'encoding': encoding,
-      }))!;
+      LocalPlatform.desktop
+          ? DesktopBookDocuments.decodeDirect(path)
+          : (await channel.invokeMethod<String>('decodeText', {
+              'path': path,
+              'encoding': encoding,
+            }))!;
   Future<String> decodeTextFile(
     String path, {
     String encoding = 'auto',
-  }) async => (await channel.invokeMethod<String>('decodeTextFile', {
-    'path': path,
-    'encoding': encoding,
-  }))!;
+  }) async => LocalPlatform.desktop
+      ? DesktopBookDocuments.decodeDirect(path)
+      : (await channel.invokeMethod<String>('decodeTextFile', {
+          'path': path,
+          'encoding': encoding,
+        }))!;
   Future<Map<String, dynamic>?> connect({required bool create}) => channel
       .invokeMapMethod<String, dynamic>(create ? 'createSync' : 'openSync');
   Future<Map<String, dynamic>?> info() =>
