@@ -14,6 +14,7 @@ import 'app_repository.dart';
 import 'catalog.dart';
 import 'legacy_wenku_repository.dart';
 import 'library_state.dart';
+import 'book_documents.dart';
 import 'desktop_book_documents.dart';
 import 'local_platform.dart';
 import 'local_series_actions.dart';
@@ -54,7 +55,10 @@ import 'reading_moments_ui.dart';
 
 Future<void> main() async {
   final binding = WidgetsFlutterBinding.ensureInitialized();
-  if (LocalPlatform.desktop) await DesktopBookDocuments.install();
+  if (LocalPlatform.desktop) {
+    BookDocuments.desktopInstaller = DesktopBookDocuments.install;
+    await DesktopBookDocuments.install();
+  }
   registerAppLicenses();
   TouchSamplingPolicy(binding);
   // Do not hold the first frame while Android is applying window insets.

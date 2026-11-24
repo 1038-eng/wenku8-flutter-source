@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
@@ -16,12 +18,7 @@ abstract final class LocalPlatform {
   // Flutter-OH adds this enum value; the stable Android/iOS SDK does not.
   static bool get harmony => !kIsWeb && defaultTargetPlatform.name == 'ohos';
   static bool get desktop =>
-      !kIsWeb &&
-      const {
-        TargetPlatform.windows,
-        TargetPlatform.macOS,
-        TargetPlatform.linux,
-      }.contains(defaultTargetPlatform);
+      !kIsWeb && (Platform.isWindows || Platform.isMacOS || Platform.isLinux);
   /// Local books use the same store on every host; only the file transport
   /// differs. Desktop gets its channel implementation in DesktopBookDocuments.
   static bool get localLibrary => android || ios || harmony || desktop;

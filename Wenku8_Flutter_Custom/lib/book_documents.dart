@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
@@ -125,7 +126,18 @@ class BookScanSnapshot {
 }
 
 class BookDocuments {
-  BookDocuments({PortableBookPreparer? preparer}) : _preparer = preparer;
+  BookDocuments({PortableBookPreparer? preparer}) : _preparer = preparer {
+    // Desktop hosts have no native plugin; every entry point that creates a
+    // BookDocuments must be able to install the shared Dart channel handler.
+    if (!_desktopInstalled && desktopInstaller != null) {
+      _desktopInstalled = true;
+      unawaited(desktopInstaller!());
+    }
+  }
+
+  /// Set once from main() on desktop hosts before the first library page.
+  static Future<void> Function()? desktopInstaller;
+  static bool _desktopInstalled = false;
   final PortableBookPreparer? _preparer;
   static Future<PortableBookPreparer>? _portable;
   static const channel = MethodChannel('org.mewx.wenku8/book_documents');

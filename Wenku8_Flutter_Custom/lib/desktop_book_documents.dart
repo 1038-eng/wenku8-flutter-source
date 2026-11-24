@@ -49,7 +49,7 @@ class DesktopBookDocuments {
     _scanPath = prefs.getString('desktop.scan.path');
     _scanAutomatic = prefs.getBool('desktop.scan.automatic') ?? false;
     _scanFormats = prefs.getStringList('desktop.scan.formats');
-    BookDocuments.channel.setMethodCallHandler(_handle);
+    BookDocuments.channel.setMethodCallHandler(handle);
   }
 
   /// Run a PowerShell script from a file instead of -Command: avoids Windows
@@ -97,6 +97,13 @@ class DesktopBookDocuments {
     };
   }
 
+  /// Persist and activate a scan folder. Also used by the automated checks.
+  static Future<void> configureScanFolder(String path) async {
+    _scanPath = path;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('desktop.scan.path', path);
+  }
+
   static Future<Map<String, dynamic>?> _selectFolder() async {
     const script = r'''
 Add-Type -AssemblyName System.Windows.Forms
@@ -110,9 +117,7 @@ if ($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
     if (result.exitCode != 0) return null;
     final line = (result.stdout as String).trim();
     if (line.isEmpty) return null;
-    _scanPath = utf8.decode(base64.decode(line));
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('desktop.scan.path', _scanPath!);
+    await configureScanFolder(utf8.decode(base64.decode(line)));
     return _folderInfo();
   }
 
@@ -154,7 +159,7 @@ if ($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
     };
   }
 
-  static Future<dynamic> _handle(MethodCall call) async {
+  static Future<dynamic> handle(MethodCall call) async {
     switch (call.method) {
       case 'pickBook':
         final files = await _pick(allowMultiple: false);
