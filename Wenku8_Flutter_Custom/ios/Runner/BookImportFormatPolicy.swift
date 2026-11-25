@@ -5,14 +5,15 @@ import Foundation
 enum BookImportFormatPolicy {
   /// Recognised book/document extensions (lower-cased, without the dot).
   static let extensions: Set<String> = [
-    "txt", "epub", "pdf", "zip", "mobi", "azw", "azw3", "prc",
-    "fb2", "docx", "rtf", "html", "xhtml", "htm", "md", "csv",
+    "txt", "text", "epub", "pdf", "zip", "mobi", "azw", "azw3", "prc",
+    "fb2", "docx", "rtf", "html", "xhtml", "htm", "md", "markdown", "csv",
     "log", "nfo", "srt", "json",
   ]
 
   /// Text-like extensions that can be decoded directly to UTF-8.
   static let textExtensions: Set<String> = [
-    "txt", "html", "xhtml", "htm", "md", "csv", "log", "nfo", "srt", "json",
+    "txt", "text", "html", "xhtml", "htm", "md", "markdown", "csv",
+    "log", "nfo", "srt", "json",
   ]
 
   /// Per-file byte ceiling. Larger archives get a generous limit; a plain

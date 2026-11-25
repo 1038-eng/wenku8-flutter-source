@@ -2,6 +2,7 @@ import Foundation
 import CoreGraphics
 import ImageIO
 import UniformTypeIdentifiers
+import zlib
 
 #if canImport(WenkuBookEngine)
 import WenkuBookEngine
@@ -115,10 +116,14 @@ final class NativeBookConversion {
       context.scaleBy(x: scale, y: scale)
       context.drawCGPDFDocument(page, in: box)
       guard let image = context.makeImage() else { continue }
+      let jpegType: String = {
+        if #available(iOS 14.0, *) { return UTType.jpeg.identifier }
+        return "public.jpeg"
+      }()
       for piece in Self.spreadPieces(image, pageNumber: pageNumber) {
         let url = imagesDir.appendingPathComponent(piece.name)
         guard let destination = CGImageDestinationCreateWithURL(url as CFURL,
-                UTType.jpeg.identifier as CFString, 1, nil) else { continue }
+                jpegType as CFString, 1, nil) else { continue }
         CGImageDestinationAddImage(destination, piece.image,
           [kCGImageDestinationLossyCompressionQuality: 0.85] as CFDictionary)
         guard CGImageDestinationFinalize(destination) else { continue }
@@ -133,6 +138,93 @@ final class NativeBookConversion {
     let title = (name as NSString).deletingPathExtension
     try writeImageEpub(at: URL(fileURLWithPath: output), title: title,
                        images: imageNames, labels: imageLabels, imageRoot: imagesDir)
+  }
+
+  // MARK: - Markup / document formats
+
+  /// Converts HTML / XHTML / Markdown / RTF / FB2 / DOCX into a text EPUB
+  /// using only system frameworks, so no third-party parser is required.
+  /// Returns the output EPUB path. Text is always capped and bounded.
+  func convertMarkup(_ path: String, name: String, output: String) throws {
+    let source = URL(fileURLWithPath: path)
+    let ext = (name as NSString).pathExtension.lowercased()
+    let raw = try Data(contentsOf: source, options: .mappedIfSafe)
+    guard !raw.isEmpty, raw.count <= 64 * 1024 * 1024 else {
+      throw BookDocumentFailure(code: "file_too_large", message: "文档为空或超过 64 MiB，请拆分后导入")
+    }
+    let title = (name as NSString).deletingPathExtension
+    let text: String
+    switch ext {
+    case "html", "htm", "xhtml":
+      text = Self.htmlToText(raw)
+    case "rtf":
+      guard let attributed = try? NSAttributedString(data: raw, options: [
+        .documentType: NSAttributedString.DocumentType.rtf,
+        .characterEncoding: String.Encoding.utf8.rawValue,
+      ], documentAttributes: nil) else {
+        throw BookDocumentFailure(code: "conversion", message: "RTF 解析失败，请另存为 TXT 或 DOCX 后导入")
+      }
+      text = attributed.string
+    case "md", "markdown", "csv", "log", "nfo", "srt", "json", "text":
+      text = Self.decodeLoose(raw)
+    case "fb2":
+      text = Self.xmlText(raw, tags: ["p"])
+    case "docx":
+      text = try Self.docxText(raw)
+    default:
+      throw BookDocumentFailure(code: "format_unavailable", message: "暂不支持该格式，请导入 TXT、EPUB 或 PDF")
+    }
+    let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !clean.isEmpty else {
+      throw BookDocumentFailure(code: "conversion", message: "文档中没有可读取的文字")
+    }
+    let chapters = splitChapters(clean)
+    try writeTextEpub(at: URL(fileURLWithPath: output), title: title, chapters: chapters)
+  }
+
+  /// Decodes bytes with a UTF-8-first, then GB18030 fallback (mirrors TXT).
+  private static func decodeLoose(_ data: Data) -> String {
+    var clean = data
+    if clean.starts(with: [0xef, 0xbb, 0xbf]) { clean = clean.dropFirst(3) }
+    if let utf8 = String(data: clean, encoding: .utf8) { return utf8 }
+    let gb = CFStringConvertEncodingToNSStringEncoding(CFStringEncoding(CFStringEncodings.GB_18030_2000.rawValue))
+    return String(data: clean, encoding: String.Encoding(rawValue: gb))
+      ?? String(decoding: clean, as: UTF8.self)
+  }
+
+  /// Extracts visible text from an HTML/XHTML document via the system HTML
+  /// parser, stripping scripts/styles and collapsing markup into plain text.
+  private static func htmlToText(_ data: Data) -> String {
+    // Let NSAttributedString detect the declared/actual encoding from the raw
+    // bytes (it honours <meta charset>; a UTF-8 misread of GBK would be garbled).
+    if let attributed = try? NSAttributedString(
+      data: data,
+      options: [.documentType: NSAttributedString.DocumentType.html],
+      documentAttributes: nil
+    ) {
+      return attributed.string
+    }
+    // Fallback: decode bytes loosely, then strip tags without a full parser.
+    let html = decodeLoose(data)
+    let stripped = html.replacingOccurrences(of: "<[^>]+>", with: " ", options: .regularExpression)
+    return stripped
+  }
+
+  /// Collects text nodes for given element names from simple XML (FB2 body).
+  private static func xmlText(_ data: Data, tags: Set<String>) -> String {
+    let parser = XMLReader(tags: tags)
+    let xmlParser = XMLParser(data: data)
+    xmlParser.delegate = parser
+    _ = xmlParser.parse()
+    return parser.text.joined(separator: "\n")
+  }
+
+  /// DOCX stores prose in word/document.xml inside the ZIP container.
+  private static func docxText(_ data: Data) throws -> String {
+    guard let archive = ZipReader(data: data), let xml = archive.file(named: "word/document.xml") else {
+      throw BookDocumentFailure(code: "conversion", message: "DOCX 结构无法识别，请另存为 DOCX 后重试")
+    }
+    return xmlText(xml, tags: ["w:t", "w:p"])
   }
 
   // MARK: - Kindle / MOBI
@@ -422,6 +514,115 @@ final class NativeBookConversion {
       .replacingOccurrences(of: "<", with: "&lt;")
       .replacingOccurrences(of: ">", with: "&gt;")
       .replacingOccurrences(of: "\"", with: "&quot;")
+  }
+}
+
+// MARK: - Lightweight helpers for markup conversion
+
+/// Collects character data inside a whitelist of XML element names. Used for
+/// FB2 (<p>) and DOCX (<w:t>/<w:p>) prose. External entities are never resolved.
+private final class XMLReader: NSObject, XMLParserDelegate {
+  private let tags: Set<String>
+  private var capture = false
+  private var current = ""
+  private(set) var text: [String] = []
+  init(tags: Set<String>) { self.tags = tags }
+  func parser(_ parser: XMLParser, didStartElement elementName: String,
+              namespaceURI: String?, qualifiedName qName: String?,
+              attributes attributeDict: [String: String] = [:]) {
+    let local = elementName.split(separator: ":").last.map(String.init) ?? elementName
+    if tags.contains(local) || tags.contains(elementName) { capture = true }
+  }
+  func parser(_ parser: XMLParser, foundCharacters string: String) {
+    if capture { current += string }
+  }
+  func parser(_ parser: XMLParser, didEndElement elementName: String,
+              namespaceURI: String?, qualifiedName qName: String?) {
+    let local = elementName.split(separator: ":").last.map(String.init) ?? elementName
+    if tags.contains(local) || tags.contains(elementName) {
+      let value = current.trimmingCharacters(in: .whitespacesAndNewlines)
+      if !value.isEmpty { text.append(value) }
+      current = ""
+      capture = false
+    }
+  }
+}
+
+/// Minimal stored/deflate ZIP reader for extracting a single named entry.
+/// Supports method 0 (stored) and 8 (deflate); EPUB/DOCX both use these.
+private final class ZipReader {
+  private let data: Data
+  private var entries: [String: (offset: Int, size: Int, method: Int)] = [:]
+  init?(data: Data) {
+    self.data = data
+    guard Self.u32(data, data.count - 22) == 0x06054b50 else { return nil }
+    let count = Int(Self.u16(data, data.count - 10))
+    var cursor = Int(Self.u32(data, data.count - 6))
+    for _ in 0..<count {
+      guard Self.u32(data, cursor) == 0x02014b50, cursor + 46 <= data.count else { break }
+      let method = Int(Self.u16(data, cursor + 10))
+      let compressed = Int(Self.u32(data, cursor + 20))
+      let nameLength = Int(Self.u16(data, cursor + 28))
+      let extraLength = Int(Self.u16(data, cursor + 30))
+      let commentLength = Int(Self.u16(data, cursor + 32))
+      let localOffset = Int(Self.u32(data, cursor + 42))
+      let nameStart = cursor + 46
+      guard nameStart + nameLength <= data.count,
+        let name = String(data: data.subdata(in: nameStart..<(nameStart + nameLength)), encoding: .utf8) else {
+        break
+      }
+      guard Self.u32(data, localOffset) == 0x04034b50, localOffset + 30 <= data.count else { break }
+      let localName = Int(Self.u16(data, localOffset + 26))
+      let localExtra = Int(Self.u16(data, localOffset + 28))
+      let body = localOffset + 30 + localName + localExtra
+      entries[name] = (body, compressed, method)
+      cursor = nameStart + nameLength + extraLength + commentLength
+    }
+  }
+  func file(named name: String) -> Data? {
+    guard let entry = entries[name] else { return nil }
+    // Guard against corrupt offsets so a malformed archive cannot trap on a
+    // Range with lowerBound > upperBound.
+    guard entry.offset >= 0, entry.size >= 0,
+          entry.offset <= data.count, entry.size <= data.count - entry.offset else { return nil }
+    let body = data.subdata(in: entry.offset..<(entry.offset + entry.size))
+    if entry.method == 0 { return body }
+    if entry.method == 8 {
+      return body.withUnsafeBytes { raw -> Data? in
+        guard raw.baseAddress != nil else { return nil }
+        var source = z_stream()
+        // zlib requires inflateInit before inflate; without it inflate returns
+        // Z_STREAM_ERROR and every deflated DOCX entry fails to decompress.
+        guard inflateInit(&source) == Z_OK else { return nil }
+        source.next_in = UnsafeMutablePointer<Bytef>(mutating: raw.baseAddress?.assumingMemoryBound(to: Bytef.self))
+        source.avail_in = uInt(min(body.count, Int.max))
+        defer { inflateEnd(&source) }
+        var result = Data()
+        var out = [Bytef](repeating: 0, count: 65536)
+        while source.avail_in > 0 {
+          let produced = out.withUnsafeMutableBufferPointer { buf -> Int in
+            source.next_out = buf.baseAddress
+            source.avail_out = uInt(buf.count)
+            let status = inflate(&source, Z_NO_FLUSH)
+            if status != Z_OK && status != Z_STREAM_END { return -1 }
+            return buf.count - Int(source.avail_out)
+          }
+          if produced < 0 { break }
+          if produced > 0 { result.append(contentsOf: out.prefix(produced)) }
+          if source.avail_in > 0 && produced == 0 { break } // no progress guard
+        }
+        return result.isEmpty ? nil : result
+      }
+    }
+    return nil
+  }
+  private static func u16(_ data: Data, _ offset: Int) -> UInt16 {
+    guard offset >= 0, offset + 2 <= data.count else { return 0 }
+    return data.subdata(in: offset..<(offset + 2)).withUnsafeBytes { $0.load(as: UInt16.self).littleEndian }
+  }
+  private static func u32(_ data: Data, _ offset: Int) -> UInt32 {
+    guard offset >= 0, offset + 4 <= data.count else { return 0 }
+    return data.subdata(in: offset..<(offset + 4)).withUnsafeBytes { $0.load(as: UInt32.self).littleEndian }
   }
 }
 

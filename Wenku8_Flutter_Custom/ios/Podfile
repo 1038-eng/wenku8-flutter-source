@@ -38,6 +38,12 @@ post_install do |installer|
     # Xcode 27 requires a minimum deployment target of iOS 15.0.
     target.build_configurations.each do |config|
       config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.0'
+      # NativeBookConversion.swift uses zlib inflate() for DOCX import; link
+      # libz explicitly so it does not depend on a transitive pod's linkage.
+      flags = config.build_settings['OTHER_LDFLAGS'] || '$(inherited)'
+      flags = [flags] unless flags.is_a?(Array)
+      flags << '-lz' unless flags.include?('-lz')
+      config.build_settings['OTHER_LDFLAGS'] = flags
       # Xcode 15+ dropped DT_TOOLCHAIN_DIR; use TOOLCHAIN_DIR instead.
       if config.build_settings['LIBRARY_SEARCH_PATHS'].is_a?(Array)
         config.build_settings['LIBRARY_SEARCH_PATHS'] = config.build_settings['LIBRARY_SEARCH_PATHS'].map { |p| p.gsub('DT_TOOLCHAIN_DIR', 'TOOLCHAIN_DIR') }

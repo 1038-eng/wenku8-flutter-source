@@ -88,8 +88,26 @@ final class LinkedBookDocuments {
     guard lease.size <= 128 * 1024 * 1024 else {
       throw BookDocumentFailure(code: "file_too_large", message: "TXT 超过 128 MiB，请拆分原文件后导入")
     }
+    let requested = args["encoding"] as? String ?? "auto"
     let sample = try bytes(lease, offset: 0, count: min(65536, lease.size))
-    let encoding = try ManagedBookDocuments.resolveEncoding(args["encoding"] as? String ?? "auto", sample: sample)
+    var encoding = try ManagedBookDocuments.resolveEncoding(requested, sample: sample)
+    // Auto-detected UTF-8 can be a false positive when the opening bytes are
+    // ASCII or otherwise overlap UTF-8, with legacy GBK text later in the file.
+    // Cross-check a sample from the middle before locking the encoding into the
+    // durable reference (the reader reuses this value for every block).
+    if requested == "auto" && encoding == "UTF-8" && lease.size > 65536 {
+      let middle = max(0, lease.size / 2 - 4)
+      var probe = try bytes(lease, offset: middle, count: min(65536, lease.size - middle))
+      // The probe may start on a UTF-8 continuation byte; skip leading 0x80-0xBF
+      // so a valid file is not misdiagnosed as a legacy encoding.
+      while let first = probe.first, first >= 0x80, first <= 0xBF {
+        probe = probe.dropFirst(1)
+      }
+      if !probe.isEmpty,
+         !ManagedBookDocuments.isWellFormed(probe, encoding: "UTF-8", allowTrailingPartial: true) {
+        encoding = ManagedBookDocuments.legacyEncoding(for: probe)
+      }
+    }
     var digest = SHA256()
     digest.update(data: sample)
     var offset = sample.count

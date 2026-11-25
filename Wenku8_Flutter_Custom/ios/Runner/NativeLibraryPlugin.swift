@@ -231,10 +231,31 @@ final class NativeLibraryPlugin: NSObject, FlutterPlugin, UIDocumentPickerDelega
       }
       return try conversion.extractKindle(path, output: output)
     case "prepareBook", "prepareLinkedDocument":
-      if (args["name"] as? String ?? "").lowercased().hasSuffix(".doc") {
+      let name = args["name"] as? String ?? ""
+      let lower = name.lowercased()
+      if lower.hasSuffix(".doc") {
         throw BookDocumentFailure(code: "format_unavailable", message: "此设备暂不支持二进制 DOC，请将原文件另存为 DOCX、RTF 或 EPUB 后导入")
       }
-      throw BookDocumentFailure(code: "format_unavailable", message: "此平台正在适配此格式，请先导入 EPUB 或 TXT")
+      guard let path = args["path"] as? String else {
+        throw BookDocumentFailure(code: "conversion_path", message: "缺少要转换的文件")
+      }
+      let cache = try FileManager.default.url(for: .cachesDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+      let conversion = try NativeBookConversion(documents: store(),
+        portableRoot: cache.appendingPathComponent("portable-book-import", isDirectory: true))
+      let supportedMarkup = ["html", "htm", "xhtml", "md", "markdown", "fb2", "docx", "rtf",
+        "csv", "log", "nfo", "srt", "json", "text"]
+      let ext = (name as NSString).pathExtension.lowercased()
+      if supportedMarkup.contains(ext) {
+        let output = cache.appendingPathComponent("book-\(UUID().uuidString).epub").path
+        do {
+          try conversion.convertMarkup(path, name: name, output: output)
+        } catch let failure as BookDocumentFailure {
+          return [["name": name, "path": NSNull(), "error": failure.message]]
+        }
+        let epubName = (name as NSString).deletingPathExtension + ".epub"
+        return [["name": epubName, "path": output]]
+      }
+      throw BookDocumentFailure(code: "format_unavailable", message: "此格式暂不支持，请导入 TXT、EPUB、PDF 或常见文档格式")
     default: return FlutterMethodNotImplemented
     }
   }

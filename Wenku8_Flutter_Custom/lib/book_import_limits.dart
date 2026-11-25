@@ -41,7 +41,7 @@ const iosBookImportLimitsSummary =
     'EPUB / PDF / DOCX / ZIP：512 MiB；Kindle：256 MiB；TXT / FB2 / RTF：128 MiB；HTML / Markdown：32 MiB。ZIP 展开后合计不超过 1 GiB。';
 
 bool supportsBookImport(String name) => RegExp(
-  r'\.(txt|epub|mobi|azw|azw3|prc|fb2|pdf|docx?|rtf|html?|xhtml|md|markdown|zip)$',
+  r'\.(txt|text|epub|mobi|azw|azw3|prc|fb2|pdf|docx?|rtf|html?|xhtml|md|markdown|zip)$',
   caseSensitive: false,
 ).hasMatch(name);
 
