@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
 import 'package:archive/archive_io.dart';
@@ -9,6 +10,7 @@ import 'package:flutter/services.dart';
 import 'package:pdfx/pdfx.dart';
 import 'package:html/parser.dart' show parse;
 import 'package:path_provider/path_provider.dart';
+import 'package:xml/xml.dart' as xml;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'book_documents.dart';
@@ -425,31 +427,20 @@ if ($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
         .toList();
   }
 
-  static Future<String> _decode(String path) async {
-    final bytes = await File(path).readAsBytes();
-    try {
-      return utf8.decode(bytes);
-    } on FormatException {
-      // On macOS there is no PowerShell/GBK code page 936; decode with the
-      // pure-Dart charset package instead.
-      if (Platform.isMacOS) {
-        try {
-          return const GbkCodec().decode(bytes);
-        } catch (_) {
-          throw StateError('无法识别文本编码');
-        }
-      }
-      final script = r'''
-[Console]::OutputEncoding = [Text.Encoding]::UTF8
-$bytes = [IO.File]::ReadAllBytes($args[0])
-$text = [Text.Encoding]::GetEncoding(936).GetString($bytes)
-[Console]::WriteLine([Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($text)))
-''';
-      final result = await _runPs(script, [path]);
-      if (result.exitCode != 0) throw StateError('无法识别文本编码');
-      return utf8.decode(base64.decode((result.stdout as String).trim()));
-    }
+  static Future<String> _decode(String path) async =>
+      decodeBytes(await File(path).readAsBytes());
+
+  /// Two-pass text decoding shared by Windows/macOS/Linux. Mirrors the mobile
+  /// engines: strict UTF-8 first, then UTF-16 by BOM/NUL cadence, then GBK —
+  /// sampled near the first invalid byte so a UTF-8-looking ASCII preface
+  /// cannot misclassify a legacy CJK book. Pure Dart, no shell dependency.
+  static String decodeBytes(List<int> input) {
+    final bytes = input is Uint8List ? input : Uint8List.fromList(input);
+    if (bytes.isEmpty) return '';
+    final decoder = _TextDecoder(bytes);
+    return decoder.decode();
   }
+
 
   static Future<List<Map<String, dynamic>>> _prepare(
     String name,
@@ -478,8 +469,14 @@ $text = [Text.Encoding]::GetEncoding(936).GetString($bytes)
       if (ext == 'zip') {
         return await _unpack(path, root);
       }
-      final text = await _decode(path);
-      final plain = ext == 'md' || ext == 'markdown' ? text : _stripMarkup(text);
+      // DOCX is a ZIP of XML; decoding its raw bytes as text yields garbage.
+      // Extract word/document.xml and collect its <w:t> text nodes instead.
+      final text = ext == 'docx'
+          ? _docxText(await File(path).readAsBytes())
+          : await _decode(path);
+      final plain = ext == 'md' || ext == 'markdown' || ext == 'docx'
+          ? text
+          : _stripMarkup(text);
       final target = File(
         '${root.path}${Platform.pathSeparator}${_safeName(name)}.txt',
       );
@@ -657,6 +654,33 @@ $text = [Text.Encoding]::GetEncoding(936).GetString($bytes)
     return prepared;
   }
 
+  /// Extracts readable prose from a DOCX (ZIP) by reading word/document.xml
+  /// and joining paragraph/text nodes. Kept bounded so a malformed archive
+  /// cannot exhaust memory.
+  static String _docxText(List<int> bytes) {
+    final archive = ZipDecoder().decodeBytes(bytes);
+    ArchiveFile? entry;
+    for (final file in archive.files) {
+      if (file.isFile && file.name == 'word/document.xml') {
+        entry = file;
+        break;
+      }
+    }
+    if (entry == null) throw StateError('DOCX 结构无法识别，请另存为 DOCX 后重试');
+    final document = xml.XmlDocument.parse(
+      utf8.decode(entry.content as List<int>, allowMalformed: true),
+    );
+    final buffer = StringBuffer();
+    for (final paragraph in document.findAllElements('w:p')) {
+      final line = paragraph.findAllElements('w:t').map((n) => n.innerText).join();
+      if (line.trim().isNotEmpty) buffer.writeln(line);
+    }
+    if (buffer.isEmpty) {
+      buffer.write(document.findAllElements('w:t').map((n) => n.innerText).join());
+    }
+    return buffer.toString();
+  }
+
   static String _stripMarkup(String source) {
     final document = parse(source);
     return document.body?.text ?? document.documentElement?.text ?? source;
@@ -677,5 +701,132 @@ $text = [Text.Encoding]::GetEncoding(936).GetString($bytes)
       final file = File(path);
       if (await file.exists()) await file.delete();
     } catch (_) {}
+  }
+}
+
+/// Stateful helper so the failure offset from the UTF-8 pass can be reused
+/// when sampling for the legacy-encoding pass.
+class _TextDecoder {
+  _TextDecoder(this.bytes);
+  final Uint8List bytes;
+
+  String decode() {
+    // Explicit BOMs are authoritative.
+    if (bytes.length >= 3 && bytes[0] == 0xef && bytes[1] == 0xbb && bytes[2] == 0xbf) {
+      return utf8.decode(bytes.sublist(3));
+    }
+    if (bytes.length >= 2 && bytes[0] == 0xff && bytes[1] == 0xfe) {
+      return _decodeUtf16(littleEndian: true, offset: 2);
+    }
+    if (bytes.length >= 2 && bytes[0] == 0xfe && bytes[1] == 0xff) {
+      return _decodeUtf16(littleEndian: false, offset: 2);
+    }
+
+    // A fully valid UTF-8 file is unambiguous — decode directly.
+    if (_firstInvalidUtf8(bytes) == null) return utf8.decode(bytes);
+
+    // Otherwise try each candidate encoding on a truncated sample and pick the
+    // one producing the most "text-like" characters. NUL cadence alone is not
+    // enough: CJK UTF-16 has no NUL bytes, and GBK bytes can also decode as
+    // plausible UTF-16 code units — scoring the decoded text is reliable.
+    final leScore = _score(_decodeUtf16Sample(true));
+    final beScore = _score(_decodeUtf16Sample(false));
+    final gbkScore = _score(_gbkSample());
+    if (leScore >= beScore && leScore > gbkScore) {
+      return _decodeUtf16(littleEndian: true, offset: 0);
+    }
+    if (beScore > gbkScore) {
+      return _decodeUtf16(littleEndian: false, offset: 0);
+    }
+    try {
+      return const GbkCodec().decode(bytes);
+    } on FormatException {
+      // Truncated GBK tail can fail on the full file even if the sample was OK.
+      return const GbkCodec(allowMalformed: true).decode(bytes);
+    }
+  }
+
+  String _decodeUtf16Sample(bool littleEndian) {
+    final end = bytes.length > 512 ? 512 : bytes.length;
+    final even = end - end % 2;
+    final view = ByteData.sublistView(bytes, 0, even);
+    final endian = littleEndian ? Endian.little : Endian.big;
+    final units = Uint16List(even ~/ 2);
+    for (var i = 0; i < units.length; i++) {
+      units[i] = view.getUint16(i * 2, endian);
+    }
+    return String.fromCharCodes(units);
+  }
+
+  String _gbkSample() {
+    final sample = bytes.length > 512 ? bytes.sublist(0, 512) : bytes;
+    try {
+      return const GbkCodec().decode(sample);
+    } on FormatException {
+      return const GbkCodec(allowMalformed: true).decode(sample);
+    }
+  }
+
+  /// Scores how text-like a decoded sample is. Rewards CJK / letters / digits
+  /// / common punctuation; heavily penalises NUL, control chars, replacement
+  /// chars and private-use characters that wrong byte orders typically yield.
+  double _score(String text) {
+    if (text.isEmpty) return 0;
+    var good = 0.0, total = 0;
+    for (final rune in text.runes) {
+      total++;
+      if (rune == 0x0a || rune == 0x0d || rune == 0x09 ||
+          (rune >= 0x20 && rune <= 0x7e) ||
+          (rune >= 0x4e00 && rune <= 0x9fff) ||
+          (rune >= 0x3000 && rune <= 0x303f) ||
+          (rune >= 0xff01 && rune <= 0xff65)) {
+        good++;
+      } else if (rune >= 0xe000 && rune <= 0xf8ff) {
+        // Private use: GBK replacement character lives here (U+E7B3).
+        good -= 0.5;
+      }
+    }
+    return total == 0 ? 0 : good / total;
+  }
+
+  String _decodeUtf16({required bool littleEndian, required int offset}) {
+    final end = bytes.length - (bytes.length - offset) % 2;
+    final units = Uint16List((end - offset) ~/ 2);
+    final view = ByteData.sublistView(bytes, offset, end);
+    final endian = littleEndian ? Endian.little : Endian.big;
+    for (var i = 0; i < units.length; i++) {
+      units[i] = view.getUint16(i * 2, endian);
+    }
+    return String.fromCharCodes(units);
+  }
+
+  /// Returns the byte offset of the first malformed UTF-8 sequence, or null if
+  /// the whole input is valid UTF-8.
+  int? _firstInvalidUtf8(Uint8List data) {
+    var i = 0;
+    while (i < data.length) {
+      final b = data[i];
+      if (b < 0x80) {
+        i++;
+        continue;
+      }
+      int need;
+      if (b >= 0xc2 && b <= 0xdf) {
+        need = 1;
+      } else if (b >= 0xe0 && b <= 0xef) {
+        need = 2;
+      } else if (b >= 0xf0 && b <= 0xf4) {
+        need = 3;
+      } else {
+        return i;
+      }
+      if (i + need >= data.length) return i;
+      for (var k = 1; k <= need; k++) {
+        final c = data[i + k];
+        if (c < 0x80 || c > 0xbf) return i;
+      }
+      i += need + 1;
+    }
+    return null;
   }
 }
