@@ -9,6 +9,7 @@ import 'catalog.dart';
 import 'dock_layout.dart';
 import 'feature_pages.dart';
 import 'library_state.dart';
+import 'local_platform.dart';
 import 'offline_repository.dart';
 import 'pages.dart' show SettingsPage;
 import 'ui_notifiers.dart';
@@ -49,125 +50,127 @@ class MyPage extends StatelessWidget {
               context,
             ).copyWith(bottom: DockLayout.scrollPaddingOf(context)),
             children: [
-              AnimatedBuilder(
-                animation: Listenable.merge([
-                  features?.account ?? state.bookmarkChanges,
-                  ?features?.shelfSync,
-                ]),
-                builder: (context, _) {
-                  final account = features?.account;
-                  final profile = account?.profile;
-                  return ContentPanel(
-                    key: const ValueKey('my-account'),
-                    onTap: account == null
-                        ? null
-                        : () => pushNovelPage<void>(
-                            context,
-                            WenkuAccountPage(
-                              account: account,
-                              state: state,
-                              repository: repository,
+              // iPhone 定制版源码不含在线组件，登录入口点进去只会报错，直接隐藏。
+              if (!LocalPlatform.ios)
+                AnimatedBuilder(
+                  animation: Listenable.merge([
+                    features?.account ?? state.bookmarkChanges,
+                    ?features?.shelfSync,
+                  ]),
+                  builder: (context, _) {
+                    final account = features?.account;
+                    final profile = account?.profile;
+                    return ContentPanel(
+                      key: const ValueKey('my-account'),
+                      onTap: account == null
+                          ? null
+                          : () => pushNovelPage<void>(
+                              context,
+                              WenkuAccountPage(
+                                account: account,
+                                state: state,
+                                repository: repository,
+                              ),
+                              reduceMotion: state.reduceMotion,
                             ),
-                            reduceMotion: state.reduceMotion,
+                      child: Row(
+                        children: [
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(16),
+                            child: account?.authenticated == true
+                                ? SizedBox(
+                                    width: 56,
+                                    height: 56,
+                                    child: account?.avatar == null
+                                        ? const ArchiveIcon(
+                                            CupertinoIcons.person_crop_circle,
+                                            size: 40,
+                                          )
+                                        : Image.memory(
+                                            account!.avatar!,
+                                            fit: BoxFit.cover,
+                                            cacheWidth:
+                                                (56 *
+                                                        MediaQuery.devicePixelRatioOf(
+                                                          context,
+                                                        ))
+                                                    .ceil(),
+                                            errorBuilder: (_, _, _) =>
+                                                const ArchiveIcon(
+                                                  CupertinoIcons
+                                                      .person_crop_circle,
+                                                  size: 40,
+                                                ),
+                                          ),
+                                  )
+                                : Image.asset(
+                                    'assets/branding/app-icon.png',
+                                    width: 56,
+                                    height: 56,
+                                    cacheWidth:
+                                        (56 *
+                                                MediaQuery.devicePixelRatioOf(
+                                                  context,
+                                                ))
+                                            .ceil(),
+                                    cacheHeight:
+                                        (56 *
+                                                MediaQuery.devicePixelRatioOf(
+                                                  context,
+                                                ))
+                                            .ceil(),
+                                  ),
                           ),
-                    child: Row(
-                      children: [
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(16),
-                          child: account?.authenticated == true
-                              ? SizedBox(
-                                  width: 56,
-                                  height: 56,
-                                  child: account?.avatar == null
-                                      ? const ArchiveIcon(
-                                          CupertinoIcons.person_crop_circle,
-                                          size: 40,
-                                        )
-                                      : Image.memory(
-                                          account!.avatar!,
-                                          fit: BoxFit.cover,
-                                          cacheWidth:
-                                              (56 *
-                                                      MediaQuery.devicePixelRatioOf(
-                                                        context,
-                                                      ))
-                                                  .ceil(),
-                                          errorBuilder: (_, _, _) =>
-                                              const ArchiveIcon(
-                                                CupertinoIcons
-                                                    .person_crop_circle,
-                                                size: 40,
-                                              ),
-                                        ),
-                                )
-                              : Image.asset(
-                                  'assets/branding/app-icon.png',
-                                  width: 56,
-                                  height: 56,
-                                  cacheWidth:
-                                      (56 *
-                                              MediaQuery.devicePixelRatioOf(
-                                                context,
-                                              ))
-                                          .ceil(),
-                                  cacheHeight:
-                                      (56 *
-                                              MediaQuery.devicePixelRatioOf(
-                                                context,
-                                              ))
-                                          .ceil(),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                AppText(
+                                  account?.authenticated == true
+                                      ? profile?.displayName ?? '文库账号'
+                                      : '登录文库账号',
+                                  style: const TextStyle(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.w600,
+                                  ),
                                 ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              AppText(
-                                account?.authenticated == true
-                                    ? profile?.displayName ?? '文库账号'
-                                    : '登录文库账号',
-                                style: const TextStyle(
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.w600,
+                                const SizedBox(height: 7),
+                                AppText(
+                                  account?.authenticated == true
+                                      ? profile == null
+                                            ? '账号已连接'
+                                            : '${profile.score} 积分 · ${profile.rank}${features?.shelfSync == null
+                                                  ? ''
+                                                  : features!.shelfSync!.syncing
+                                                  ? '\n书架正在同步'
+                                                  : features.shelfSync!.error != null
+                                                  ? '\n书架待同步 · ${features.shelfSync!.error}'
+                                                  : features.shelfSync!.syncedAt != null
+                                                  ? '\n书架已与文库同步'
+                                                  : ''}'
+                                      : '轻小说文库账号 · 云书架与每日签到',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    height: 1.6,
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurfaceVariant,
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(height: 7),
-                              AppText(
-                                account?.authenticated == true
-                                    ? profile == null
-                                          ? '账号已连接'
-                                          : '${profile.score} 积分 · ${profile.rank}${features?.shelfSync == null
-                                                ? ''
-                                                : features!.shelfSync!.syncing
-                                                ? '\n书架正在同步'
-                                                : features.shelfSync!.error != null
-                                                ? '\n书架待同步 · ${features.shelfSync!.error}'
-                                                : features.shelfSync!.syncedAt != null
-                                                ? '\n书架已与文库同步'
-                                                : ''}'
-                                    : '轻小说文库账号 · 云书架与每日签到',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  height: 1.6,
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.onSurfaceVariant,
-                                ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: 8),
-                        const ArchiveIcon(
-                          CupertinoIcons.chevron_right,
-                          size: 14,
-                        ),
-                      ],
-                    ),
-                  );
-                },
-              ),
+                          const SizedBox(width: 8),
+                          const ArchiveIcon(
+                            CupertinoIcons.chevron_right,
+                            size: 14,
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
               const SizedBox(height: 24),
               FeatureEntry(
                 key: const ValueKey('my-statistics'),

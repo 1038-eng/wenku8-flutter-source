@@ -163,9 +163,31 @@ class HomeShellState extends State<HomeShell> with TickerProviderStateMixin {
   static const _dockItems = [
     GlassDockItem(CupertinoIcons.house, '发现'),
     GlassDockItem(CupertinoIcons.book, '书架', symbol: ArchiveSymbol.shelf),
-    GlassDockItem(CupertinoIcons.folder, '本地'),
+    // iPhone 定制版把本地书库页作为唯一书架，dock 显示名按平台改写。
+    GlassDockItem(
+      CupertinoIcons.folder,
+      '本地',
+      symbol: ArchiveSymbol.shelf,
+      id: 'local-shelf',
+    ),
     GlassDockItem(CupertinoIcons.person_crop_circle, '我的'),
   ];
+
+  List<GlassDockItem> get _visibleDockItems {
+    final items = [
+      for (final page in _visibleTabs)
+        page == 2 && LocalPlatform.ios
+            ? const GlassDockItem(
+                CupertinoIcons.book,
+                '书架',
+                symbol: ArchiveSymbol.shelf,
+                id: 'local-shelf',
+              )
+            : _dockItems[page],
+    ];
+    return items;
+  }
+
   late final _catalog = NovelFeedController(
     widget.repository,
     initialItems: 60,
@@ -308,7 +330,12 @@ class HomeShellState extends State<HomeShell> with TickerProviderStateMixin {
       discover.buildHeader,
       shelf.buildHeader,
       localPage?.buildHeader ??
-          (_) => const ArchiveMasthead(title: '本地', code: '03 / LOCAL ARCHIVE'),
+          (_) => LocalPlatform.ios
+              ? const ArchiveMasthead(
+                  title: '书架',
+                  code: '01 / PERSONAL ARCHIVE',
+                )
+              : const ArchiveMasthead(title: '本地', code: '03 / LOCAL ARCHIVE'),
       settings.buildHeader,
     ];
     _pageWidgets =
@@ -799,9 +826,7 @@ class HomeShellState extends State<HomeShell> with TickerProviderStateMixin {
                         onSelected: (slot) => _selectTab(_visibleTabs[slot]),
                         onReselected: (slot) =>
                             _scrollTabToTop(_visibleTabs[slot]),
-                        items: [
-                          for (final page in _visibleTabs) _dockItems[page],
-                        ],
+                        items: _visibleDockItems,
                       ),
                     ),
                   ),
@@ -845,12 +870,15 @@ class HomeShellState extends State<HomeShell> with TickerProviderStateMixin {
                   child: ArchiveMasthead(
                     title: switch (_searchScope) {
                       1 => '书架',
-                      2 => '本地',
+                      2 => LocalPlatform.ios ? '书架' : '本地',
                       _ => '轻小说文库',
                     },
                     code: switch (_searchScope) {
                       1 => '02 / PERSONAL ARCHIVE',
-                      2 => '03 / LOCAL ARCHIVE',
+                      2 =>
+                        LocalPlatform.ios
+                            ? '01 / PERSONAL ARCHIVE'
+                            : '03 / LOCAL ARCHIVE',
                       _ => 'WENKU8 / READING ARCHIVE',
                     },
                     brand: _searchScope == 0,

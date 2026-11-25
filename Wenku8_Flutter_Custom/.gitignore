@@ -168,3 +168,7 @@ key.properties
 !android/gradlew
 !android/gradlew.bat
 !android/gradle/wrapper/gradle-wrapper.jar
+
+# Offline TTS model assets are large binaries (>100MB) and kept out of git.
+# Fetch them separately for local builds; the app code is source-only here.
+/assets/models/tts/kokoro/

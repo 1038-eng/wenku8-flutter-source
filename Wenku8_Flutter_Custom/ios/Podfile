@@ -1,4 +1,4 @@
-platform :ios, '13.0'
+platform :ios, '15.0'
 
 # CocoaPods analytics sends network stats synchronously affecting flutter build latency.
 ENV['COCOAPODS_DISABLE_STATS'] = 'true'
@@ -35,5 +35,26 @@ end
 post_install do |installer|
   installer.pods_project.targets.each do |target|
     flutter_additional_ios_build_settings(target)
+    # Xcode 27 requires a minimum deployment target of iOS 15.0.
+    target.build_configurations.each do |config|
+      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.0'
+      # Xcode 15+ dropped DT_TOOLCHAIN_DIR; use TOOLCHAIN_DIR instead.
+      if config.build_settings['LIBRARY_SEARCH_PATHS'].is_a?(Array)
+        config.build_settings['LIBRARY_SEARCH_PATHS'] = config.build_settings['LIBRARY_SEARCH_PATHS'].map { |p| p.gsub('DT_TOOLCHAIN_DIR', 'TOOLCHAIN_DIR') }
+      end
+    end
+  end
+  # Older CocoaPods writes DT_TOOLCHAIN_DIR into generated xcconfig files,
+  # which Xcode 27 rejects. Patch them right after generation.
+  Dir.glob(File.join(__dir__, 'Pods', 'Target Support Files', '**', '*.xcconfig')).each do |path|
+    content = File.read(path)
+    patched = content.gsub('DT_TOOLCHAIN_DIR', 'TOOLCHAIN_DIR')
+    File.write(path, patched) if patched != content
+  end
+  frameworks_script = File.join(__dir__, 'Pods', 'Target Support Files', 'Pods-Runner', 'Pods-Runner-frameworks.sh')
+  if File.exist?(frameworks_script)
+    content = File.read(frameworks_script)
+    patched = content.gsub('DT_TOOLCHAIN_DIR', 'TOOLCHAIN_DIR')
+    File.write(frameworks_script, patched) if patched != content
   end
 end

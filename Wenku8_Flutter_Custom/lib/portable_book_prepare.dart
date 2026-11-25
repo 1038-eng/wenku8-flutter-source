@@ -1,6 +1,4 @@
 import 'dart:io';
-import 'dart:typed_data';
-
 import 'package:flutter/services.dart';
 
 /// 由原生层返回的「可导入文档」条目。
@@ -48,6 +46,21 @@ class PortableBookPreparer {
   }) async {
     onProgress?.call(0, 1);
     try {
+      // iOS / Harmony 用原生 PDF 渲染器把每一页转成图片 EPUB。原生侧没有
+      // 把它接进 prepareBook（那里是抛错桩），所以必须在这里显式分派，
+      // 否则 PDF 会掉进「此平台正在适配此格式」的失败分支。
+      if (extractPdf != null && name.toLowerCase().endsWith('.pdf')) {
+        await directory.create(recursive: true);
+        final output =
+            '${directory.path}/pdf-${DateTime.now().microsecondsSinceEpoch}.epub';
+        await extractPdf!(name, path, output);
+        final epubName = name.replaceFirst(
+          RegExp(r'\.pdf$', caseSensitive: false),
+          '.epub',
+        );
+        onProgress?.call(1, 1);
+        return [(name: epubName, path: output, error: null)];
+      }
       final docs = await convert(name, path);
       onProgress?.call(1, 1);
       return docs;
@@ -65,11 +78,6 @@ class PortableBookPreparer {
         if (await file.exists()) await file.delete();
       } catch (_) {}
     }
-  }
-
-  static String _basename(String path) {
-    final index = path.lastIndexOf(Platform.pathSeparator);
-    return index < 0 ? path : path.substring(index + 1);
   }
 }
 

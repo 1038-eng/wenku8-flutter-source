@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 
 import 'library_state.dart';
@@ -26,19 +28,29 @@ class HomeNavigation extends ChangeNotifier {
   bool get localReader => _value.localReader;
   bool get combinedShelf => _value.combinedShelf;
   bool get readableShelfOnly => cachedShelf || localReader;
+  /// iPhone 定制版：只保留两页——本地书库（显示为「书架」）与「我的」。
+  /// 在线书架和发现页都不出现；本地书库页面编号仍是 2，避免改动页面身份。
+  static const _iphoneTabs = [2, 3];
+
   List<int> get tabs {
+    if (Platform.isIOS) return _iphoneTabs;
     if (localReader) return combinedShelf ? const [1, 3] : const [2, 3];
     if (combinedShelf) return cachedShelf ? const [1, 3] : const [0, 1, 3];
     return cachedShelf ? const [1, 2, 3] : const [0, 1, 2, 3];
   }
 
-  int destination(int current) => tabs.contains(current)
-      ? current
-      : localReader
-      ? combinedShelf
-            ? 1
-            : 2
-      : 1;
+  int destination(int current) {
+    if (Platform.isIOS) {
+      return _iphoneTabs.contains(current) ? current : _iphoneTabs.first;
+    }
+    return tabs.contains(current)
+        ? current
+        : localReader
+        ? combinedShelf
+              ? 1
+              : 2
+        : 1;
+  }
 
   void _changed() {
     final next = _read();

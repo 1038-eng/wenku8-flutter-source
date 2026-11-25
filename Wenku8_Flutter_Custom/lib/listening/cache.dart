@@ -77,6 +77,8 @@ class SpeechAudioCache implements SpeechAudioSource, SpeechLanguageVoiceSource {
     // App 生命周期内只创建一个本地客户端：模型解压与 sherpa 引擎都在
     // 首次使用时惰性初始化并缓存，避免每次合成重新加载百 MB 级模型。
     final local = LocalSpeechClient();
+    // 后台提前解压模型 / 初始化引擎；不阻塞启动，失败静默留给实际朗读报错。
+    local.warmUp();
     return SpeechAudioCache(
       Directory('${(await getTemporaryDirectory()).path}/listening-audio-v1'),
       EdgeSpeechClient(),

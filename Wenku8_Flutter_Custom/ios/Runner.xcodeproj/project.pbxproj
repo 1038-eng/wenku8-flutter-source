@@ -33,6 +33,7 @@
 		A014F0010000000000000009 /* BookFolderScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = A014F0020000000000000009 /* BookFolderScanner.swift */; };
 		A014F001000000000000000A /* NativeBookConversion.swift in Sources */ = {isa = PBXBuildFile; fileRef = A014F002000000000000000A /* NativeBookConversion.swift */; };
 		A014F001000000000000000B /* NativePdfImport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A014F002000000000000000B /* NativePdfImport.swift */; };
+		A014F001000000000000000C /* BookImportFormatPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A014F002000000000000000C /* BookImportFormatPolicy.swift */; };
 		A014F0010000000000000012 /* NativeFrameRatePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A014F0020000000000000012 /* NativeFrameRatePlugin.swift */; };
 		A01800010000000000000001 /* BookSyncDocument.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01800020000000000000001 /* BookSyncDocument.swift */; };
 		A02100010000000000000001 /* LinkedBookDocuments.swift in Sources */ = {isa = PBXBuildFile; fileRef = A02100020000000000000001 /* LinkedBookDocuments.swift */; };
@@ -48,13 +49,6 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
-		331C8085294A63A400263BE5 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 97C146E61CF9000F007C117D /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 97C146ED1CF9000F007C117D;
-			remoteInfo = Runner;
-		};
 		41C60BACD5752DA43F511058 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 97C146E61CF9000F007C117D /* Project object */;
@@ -94,13 +88,13 @@
 		1DDECF5C56E0A28BF875C84E /* ReadingWidgets.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = ReadingWidgets.entitlements; sourceTree = "<group>"; };
 		2D7AE459372DD96C3F705137 /* ReadingWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = ReadingWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		3B3967151E833CAA004F5970 /* AppFrameworkInfo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = AppFrameworkInfo.plist; path = Flutter/AppFrameworkInfo.plist; sourceTree = "<group>"; };
-		3D089F98E32ACC2DF21A1936 /* ReadingDisplay-Medium.ttf */ = {isa = PBXFileReference; includeInIndex = 1; path = "ReadingDisplay-Medium.ttf"; sourceTree = "<group>"; };
+		3D089F98E32ACC2DF21A1936 /* ReadingDisplay-Medium.ttf */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = file; path = "ReadingDisplay-Medium.ttf"; sourceTree = "<group>"; };
 		522639C9D9F899F944D75E0A /* Pods-Runner.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.debug.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.debug.xcconfig"; sourceTree = "<group>"; };
 		5390A7DC1AEED5735EF783BD /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		59A537664ECBB0C5789A1F9B /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
 		64BF2DD4345934E802CE87C0 /* ReadingWidgetOpenInbox.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ReadingWidgetOpenInbox.swift; sourceTree = "<group>"; };
-		6741D9CE91674C66AE1DB2A8 /* ReadingDisplay-Bold.ttf */ = {isa = PBXFileReference; includeInIndex = 1; path = "ReadingDisplay-Bold.ttf"; sourceTree = "<group>"; };
-		7392297404D2B922125893F1 /* ReadingSerifDisplay-Bold.ttf */ = {isa = PBXFileReference; includeInIndex = 1; path = "ReadingSerifDisplay-Bold.ttf"; sourceTree = "<group>"; };
+		6741D9CE91674C66AE1DB2A8 /* ReadingDisplay-Bold.ttf */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = file; path = "ReadingDisplay-Bold.ttf"; sourceTree = "<group>"; };
+		7392297404D2B922125893F1 /* ReadingSerifDisplay-Bold.ttf */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = file; path = "ReadingSerifDisplay-Bold.ttf"; sourceTree = "<group>"; };
 		74858FAD1ED2DC5600515810 /* Runner-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "Runner-Bridging-Header.h"; sourceTree = "<group>"; };
 		74858FAE1ED2DC5600515810 /* AppDelegate.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		7884E8672EC3CC0400C636F2 /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
@@ -125,6 +119,7 @@
 		A014F0020000000000000009 /* BookFolderScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookFolderScanner.swift; sourceTree = "<group>"; };
 		A014F002000000000000000A /* NativeBookConversion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeBookConversion.swift; sourceTree = "<group>"; };
 		A014F002000000000000000B /* NativePdfImport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePdfImport.swift; sourceTree = "<group>"; };
+		A014F002000000000000000C /* BookImportFormatPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookImportFormatPolicy.swift; sourceTree = "<group>"; };
 		A014F0020000000000000012 /* NativeFrameRatePlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeFrameRatePlugin.swift; sourceTree = "<group>"; };
 		A01800020000000000000001 /* BookSyncDocument.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookSyncDocument.swift; sourceTree = "<group>"; };
 		A02100020000000000000001 /* LinkedBookDocuments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkedBookDocuments.swift; sourceTree = "<group>"; };
@@ -169,7 +164,6 @@
 				D26790C4D5289A56A41F4794 /* Pods-Runner.release.xcconfig */,
 				B6FEC50EF48056A213ABAF76 /* Pods-Runner.profile.xcconfig */,
 			);
-			name = Pods;
 			path = Pods;
 			sourceTree = "<group>";
 		};
@@ -196,7 +190,6 @@
 				A11900020000000000000002 /* ReadingWidgetHeatmap.swift */,
 				EF1D3A7C6474B4E5937B369F /* Fonts */,
 			);
-			name = ReadingWidgets;
 			path = ReadingWidgets;
 			sourceTree = "<group>";
 		};
@@ -256,6 +249,7 @@
 				A014F0020000000000000009 /* BookFolderScanner.swift */,
 				A014F002000000000000000A /* NativeBookConversion.swift */,
 				A014F002000000000000000B /* NativePdfImport.swift */,
+				A014F002000000000000000C /* BookImportFormatPolicy.swift */,
 				A014F0020000000000000012 /* NativeFrameRatePlugin.swift */,
 				A01800020000000000000001 /* BookSyncDocument.swift */,
 				A02100020000000000000001 /* LinkedBookDocuments.swift */,
@@ -357,17 +351,9 @@
 				LastUpgradeCheck = 1510;
 				ORGANIZATIONNAME = "";
 				TargetAttributes = {
-					331C8080294A63A400263BE5 = {
-						CreatedOnToolsVersion = 14.0;
-						TestTargetID = 97C146ED1CF9000F007C117D;
-					};
 					97C146ED1CF9000F007C117D = {
 						CreatedOnToolsVersion = 7.3.1;
 						LastSwiftMigration = 1100;
-					};
-					A01700050000000000000001 = {
-						CreatedOnToolsVersion = 26.6;
-						TestTargetID = 97C146ED1CF9000F007C117D;
 					};
 				};
 			};
@@ -527,6 +513,7 @@
 				A014F0010000000000000009 /* BookFolderScanner.swift in Sources */,
 				A014F001000000000000000A /* NativeBookConversion.swift in Sources */,
 				A014F001000000000000000B /* NativePdfImport.swift in Sources */,
+				A014F001000000000000000C /* BookImportFormatPolicy.swift in Sources */,
 				A014F0010000000000000012 /* NativeFrameRatePlugin.swift in Sources */,
 				A01800010000000000000001 /* BookSyncDocument.swift in Sources */,
 				A02100010000000000000001 /* LinkedBookDocuments.swift in Sources */,
@@ -625,13 +612,13 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 13.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				SDKROOT = iphoneos;
 				SUPPORTED_PLATFORMS = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				VALIDATE_PRODUCT = YES;
-				WENKU_APP_BUNDLE_IDENTIFIER = org.mewx.wenku8Flutter;
+				WENKU_APP_BUNDLE_IDENTIFIER = com.example.wenku8reader;
 			};
 			name = Profile;
 		};
@@ -643,65 +630,19 @@
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = Runner/ReadingWidgets.entitlements;
 				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
+				DEVELOPMENT_TEAM = TEAMID00000;
 				ENABLE_BITCODE = NO;
 				INFOPLIST_FILE = Runner/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = org.mewx.wenku8Flutter.sourcePreview;
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.wenku8reader;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_OBJC_BRIDGING_HEADER = "Runner/Runner-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
 				VERSIONING_SYSTEM = "apple-generic";
-				WENKU_APP_BUNDLE_IDENTIFIER = org.mewx.wenku8Flutter.sourcePreview;
-			};
-			name = Profile;
-		};
-		331C8088294A63A400263BE5 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = org.mewx.wenku8Flutter.RunnerTests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
-				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
-				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Runner.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Runner";
-			};
-			name = Debug;
-		};
-		331C8089294A63A400263BE5 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = org.mewx.wenku8Flutter.RunnerTests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Runner.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Runner";
-			};
-			name = Release;
-		};
-		331C808A294A63A400263BE5 /* Profile */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = org.mewx.wenku8Flutter.RunnerTests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Runner.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Runner";
+				WENKU_APP_BUNDLE_IDENTIFIER = com.example.wenku8reader;
 			};
 			name = Profile;
 		};
@@ -712,14 +653,15 @@
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_ENTITLEMENTS = ReadingWidgets/ReadingWidgets.entitlements;
+				DEVELOPMENT_TEAM = TEAMID00000;
 				INFOPLIST_FILE = ReadingWidgets/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 14.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = org.mewx.wenku8Flutter.sourcePreview.ReadingWidgets;
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.wenku8reader.ReadingWidgets;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -736,14 +678,15 @@
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_ENTITLEMENTS = ReadingWidgets/ReadingWidgets.entitlements;
+				DEVELOPMENT_TEAM = TEAMID00000;
 				INFOPLIST_FILE = ReadingWidgets/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 14.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = org.mewx.wenku8Flutter.sourcePreview.ReadingWidgets;
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.wenku8reader.ReadingWidgets;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -759,14 +702,15 @@
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_ENTITLEMENTS = ReadingWidgets/ReadingWidgets.entitlements;
+				DEVELOPMENT_TEAM = TEAMID00000;
 				INFOPLIST_FILE = ReadingWidgets/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 14.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = org.mewx.wenku8Flutter.sourcePreview.ReadingWidgets;
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.wenku8reader.ReadingWidgets;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -825,12 +769,12 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 13.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
 				MTL_ENABLE_DEBUG_INFO = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
-				WENKU_APP_BUNDLE_IDENTIFIER = org.mewx.wenku8Flutter;
+				WENKU_APP_BUNDLE_IDENTIFIER = com.example.wenku8reader;
 			};
 			name = Debug;
 		};
@@ -877,7 +821,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 13.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				SDKROOT = iphoneos;
 				SUPPORTED_PLATFORMS = iphoneos;
@@ -885,7 +829,7 @@
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				TARGETED_DEVICE_FAMILY = "1,2";
 				VALIDATE_PRODUCT = YES;
-				WENKU_APP_BUNDLE_IDENTIFIER = org.mewx.wenku8Flutter;
+				WENKU_APP_BUNDLE_IDENTIFIER = com.example.wenku8reader;
 			};
 			name = Release;
 		};
@@ -897,19 +841,20 @@
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = Runner/ReadingWidgets.entitlements;
 				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
+				DEVELOPMENT_TEAM = TEAMID00000;
 				ENABLE_BITCODE = NO;
 				INFOPLIST_FILE = Runner/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = org.mewx.wenku8Flutter.sourcePreview;
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.wenku8reader;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_OBJC_BRIDGING_HEADER = "Runner/Runner-Bridging-Header.h";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
 				VERSIONING_SYSTEM = "apple-generic";
-				WENKU_APP_BUNDLE_IDENTIFIER = org.mewx.wenku8Flutter.sourcePreview;
+				WENKU_APP_BUNDLE_IDENTIFIER = com.example.wenku8reader;
 			};
 			name = Debug;
 		};
@@ -921,68 +866,21 @@
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = Runner/ReadingWidgets.entitlements;
 				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
+				DEVELOPMENT_TEAM = TEAMID00000;
 				ENABLE_BITCODE = NO;
 				INFOPLIST_FILE = Runner/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = org.mewx.wenku8Flutter.sourcePreview;
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.wenku8reader;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_OBJC_BRIDGING_HEADER = "Runner/Runner-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
 				VERSIONING_SYSTEM = "apple-generic";
-				WENKU_APP_BUNDLE_IDENTIFIER = org.mewx.wenku8Flutter.sourcePreview;
+				WENKU_APP_BUNDLE_IDENTIFIER = com.example.wenku8reader;
 			};
 			name = Release;
-		};
-		A017000A0000000000000001 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 13.0;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = org.mewx.wenku8Flutter.DocumentUITests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_TARGET_NAME = Runner;
-			};
-			name = Debug;
-		};
-		A017000A0000000000000002 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 13.0;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = org.mewx.wenku8Flutter.DocumentUITests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_TARGET_NAME = Runner;
-			};
-			name = Release;
-		};
-		A017000A0000000000000003 /* Profile */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 13.0;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = org.mewx.wenku8Flutter.DocumentUITests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_TARGET_NAME = Runner;
-			};
-			name = Profile;
 		};
 /* End XCBuildConfiguration section */
 

@@ -1016,10 +1016,15 @@ class ListeningController {
     final detach = token.onCancel(attempt.cancel);
     try {
       attempt.check();
+      // 离线音色首次合成仍可能在慢设备上超过常规 35s（引擎虽已预热，
+      // ONNX 推理本身也耗时）；给它更宽的窗口，避免中文段被误判跳过。
+      final timeout = voice.source == ListeningSource.local
+          ? const Duration(seconds: 120)
+          : preparationTimeout;
       return await attempt
           .wait(audio.prepare(segment, voice, attempt))
           .timeout(
-            preparationTimeout,
+            timeout,
             onTimeout: () {
               attempt.cancel();
               throw const SpeechFailure(

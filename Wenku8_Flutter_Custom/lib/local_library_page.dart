@@ -53,7 +53,7 @@ const _localRowGlassAction = bool.fromEnvironment(
 
 class LocalLibraryController extends ChangeNotifier {
   void Function(BuildContext)? importMenu;
-  VoidCallback? search, refresh;
+  VoidCallback? importDirect, search, refresh;
   bool importing = false;
   void changed() => notifyListeners();
 }
@@ -71,21 +71,32 @@ Widget _localLibraryHeader(
           label: '返回',
           onPressed: () => Navigator.pop(context),
         ),
-      const Expanded(
-        child: ArchiveMasthead(title: '本地', code: '03 / LOCAL ARCHIVE'),
+      Expanded(
+        child: LocalPlatform.ios
+            ? const ArchiveMasthead(title: '书架', code: '01 / PERSONAL ARCHIVE')
+            : const ArchiveMasthead(title: '本地', code: '03 / LOCAL ARCHIVE'),
       ),
-      GlassMenuAnchor(
-        child: Builder(
-          builder: (anchor) => GlassIconButton(
-            key: const ValueKey('local-import-book'),
-            icon: CupertinoIcons.arrow_down_doc,
-            label: '本地书籍操作',
-            onPressed: controller?.importMenu == null
-                ? null
-                : () => controller!.importMenu!(anchor),
+      if (LocalPlatform.ios && controller?.importDirect != null)
+        // iPhone 定制版：顶部直接放导入按钮，一次点击进完整导入页。
+        GlassIconButton(
+          key: const ValueKey('local-import-book'),
+          icon: CupertinoIcons.arrow_down_doc,
+          label: '导入书籍',
+          onPressed: controller!.importDirect,
+        )
+      else
+        GlassMenuAnchor(
+          child: Builder(
+            builder: (anchor) => GlassIconButton(
+              key: const ValueKey('local-import-book'),
+              icon: CupertinoIcons.arrow_down_doc,
+              label: '本地书籍操作',
+              onPressed: controller?.importMenu == null
+                  ? null
+                  : () => controller!.importMenu!(anchor),
+            ),
           ),
         ),
-      ),
       GlassIconButton(
         key: const ValueKey('local-search'),
         icon: CupertinoIcons.search,
@@ -302,6 +313,8 @@ class _LocalLibraryPageState extends State<LocalLibraryPage>
     _controller.refresh = _reload;
     _controller.search = widget.onSearch ?? _toggleSearch;
     _controller.importMenu = _importMenu;
+    _controller.importDirect = () =>
+        _importer.openImportPage(context, sync: _sync);
     _importer.addListener(_importChanged);
     // Keep data invalidation cheap even while this retained tab is offstage.
     // Import progress, keyboard and viewport changes reuse the ordered books.
@@ -379,6 +392,9 @@ class _LocalLibraryPageState extends State<LocalLibraryPage>
     _controller
       ..importing = _importing
       ..importMenu = _importing ? null : _importMenu
+      ..importDirect = (_importing
+          ? null
+          : () => _importer.openImportPage(context, sync: _sync))
       ..changed();
   }
 
@@ -853,6 +869,7 @@ class _LocalLibraryPageState extends State<LocalLibraryPage>
                       24,
                       MediaQuery.paddingOf(context).top +
                           FrostedHeader.toolbarHeight +
+                          FrostedHeader.featherHeight +
                           20,
                       24,
                       14,
@@ -1081,12 +1098,14 @@ class _LocalLibraryPageState extends State<LocalLibraryPage>
         onDragDone: (details) {
           final files = details.files
               .whereType<DropItemFile>()
-              .map((item) => BookDocumentSelection(
-                    name: item.name.isEmpty
-                        ? item.path.split(RegExp(r'[\\/]')).last
-                        : item.name,
-                    path: item.path,
-                  ))
+              .map(
+                (item) => BookDocumentSelection(
+                  name: item.name.isEmpty
+                      ? item.path.split(RegExp(r'[\\/]')).last
+                      : item.name,
+                  path: item.path,
+                ),
+              )
               .toList();
           if (files.isEmpty || !mounted) return;
           _importer.run(context, selectedBooks: files);

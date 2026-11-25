@@ -3,6 +3,8 @@ import 'dart:io';
 
 import 'package:archive/archive.dart';
 import 'package:archive/archive_io.dart';
+import 'package:charset/charset.dart';
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/services.dart';
 import 'package:pdfx/pdfx.dart';
 import 'package:html/parser.dart' show parse;
@@ -104,6 +106,42 @@ class DesktopBookDocuments {
     return _decode(path);
   }
 
+  /// Mobile `decodeTextFile` returns the path of a normalized temporary file;
+  /// the desktop implementation must match that contract. Callers pass the
+  /// result as `decodedPath`, so returning decoded text here made them open a
+  /// novel body as if it were a file path (see "Cannot open file, path = ...").
+  static Future<String> decodeDirectToFile(String path) async {
+    await ensureInstalled();
+    final text = await _decode(path);
+    final target = File(
+      '${_importRoot!.path}${Platform.pathSeparator}'
+      'decoded-${DateTime.now().microsecondsSinceEpoch}.txt',
+    );
+    await target.writeAsString(text, flush: true);
+    return target.path;
+  }
+
+  /// macOS sandbox grants file access only to the isolate that received the
+  /// NSOpenPanel / drag-and-drop authorization. The import engine reads the
+  /// original in a `compute()` background isolate, so an external path would
+  /// fail there with FileSystemException. Copy into the app container first so
+  /// both isolates can read it; [releaseBooks] cleans these copies by root.
+  static Future<String> stageExternal(String path, String name) async {
+    await ensureInstalled();
+    final root = _importRoot!.path;
+    if (path.startsWith(root)) return path;
+    final source = File(path);
+    if (!await source.exists()) {
+      throw StateError('找不到文件：$name');
+    }
+    final target = File(
+      '$root${Platform.pathSeparator}'
+      'copy-${DateTime.now().microsecondsSinceEpoch}-${_safeName(name)}',
+    );
+    await source.copy(target.path);
+    return target.path;
+  }
+
   static const _powershell =
       r'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe';
   static Directory? _importRoot;
@@ -180,6 +218,12 @@ class DesktopBookDocuments {
   }
 
   static Future<Map<String, dynamic>?> _selectFolder() async {
+    if (Platform.isMacOS) {
+      final path = await getDirectoryPath(confirmButtonText: '选择');
+      if (path == null || path.isEmpty) return null;
+      await configureScanFolder(path);
+      return _folderInfo();
+    }
     const script = r'''
 Add-Type -AssemblyName System.Windows.Forms
 $d = New-Object System.Windows.Forms.FolderBrowserDialog
@@ -268,7 +312,7 @@ if ($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
       case 'extractPdf':
         throw PlatformException(
           code: 'unsupported',
-          message: 'Windows 版暂不支持该格式，请先用 TXT / EPUB 导入',
+          message: '桌面版暂不支持该格式，请先用 TXT / EPUB 导入',
         );
       case 'stageImportBook':
         final args = call.arguments as Map<dynamic, dynamic>;
@@ -330,6 +374,26 @@ if ($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
       path.split(RegExp(r'[\\/]')).last;
 
   static Future<List<String>> _pick({required bool allowMultiple}) async {
+    // macOS uses the native NSOpenPanel via file_selector. The PowerShell
+    // path below is Windows-only and must never run on macOS.
+    if (Platform.isMacOS) {
+      final group = XTypeGroup(
+        label: 'Books',
+        extensions: _extensions,
+      );
+      if (allowMultiple) {
+        final files = await openFiles(
+          acceptedTypeGroups: <XTypeGroup>[group],
+          confirmButtonText: '导入',
+        );
+        return files.map((f) => f.path).where((p) => p.isNotEmpty).toList();
+      }
+      final file = await openFile(
+        acceptedTypeGroups: <XTypeGroup>[group],
+        confirmButtonText: '导入',
+      );
+      return file == null || file.path.isEmpty ? <String>[] : <String>[file.path];
+    }
     final filter = _extensions.map((e) => '*.$e').join(';');
     final script = r'''
 Add-Type -AssemblyName System.Windows.Forms
@@ -366,6 +430,15 @@ if ($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
     try {
       return utf8.decode(bytes);
     } on FormatException {
+      // On macOS there is no PowerShell/GBK code page 936; decode with the
+      // pure-Dart charset package instead.
+      if (Platform.isMacOS) {
+        try {
+          return const GbkCodec().decode(bytes);
+        } catch (_) {
+          throw StateError('无法识别文本编码');
+        }
+      }
       final script = r'''
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
 $bytes = [IO.File]::ReadAllBytes($args[0])
@@ -394,7 +467,7 @@ $text = [Text.Encoding]::GetEncoding(936).GetString($bytes)
         {
           'name': name,
           'path': null,
-          'error': 'Windows 版暂不支持 $ext，请用 TXT / EPUB / PDF',
+          'error': '桌面版暂不支持 $ext，请用 TXT / EPUB / PDF',
         },
       ];
     }
@@ -421,6 +494,64 @@ $text = [Text.Encoding]::GetEncoding(936).GetString($bytes)
     }
   }
 
+  /// Raster scale for a rendered PDF page, identical to Android's
+  /// BookPdfImport.kt: `min(120f / 72f, 1800f / max(width, height))`.
+  /// Kept pure and public so the cap is testable without the native renderer.
+  static double pdfRenderScale(double width, double height) {
+    final longest = width > height ? width : height;
+    if (longest <= 0) return 120 / 72;
+    final byLongEdge = 1800 / longest;
+    return (120 / 72) < byLongEdge ? 120 / 72 : byLongEdge;
+  }
+
+  /// Build the OPF and nav documents for a rendered PDF. Every spine idref is
+  /// registered in the manifest — the reader rejects an unresolvable idref with
+  /// "EPUB 的正文索引不完整" (local_books.dart). Kept pure so the contract is
+  /// testable without the native pdf renderer.
+  static ({String opf, String nav}) pdfEpubNavigation(
+    String name,
+    int pages,
+  ) {
+    final manifest = StringBuffer()
+      ..write(
+        '<item id="nav" href="nav.xhtml" '
+        'media-type="application/xhtml+xml" properties="nav"/>',
+      );
+    final spine = StringBuffer();
+    final nav = StringBuffer();
+    for (var index = 1; index <= pages; index++) {
+      // Image items are referenced from the xhtml via <img>; chapter items are
+      // referenced by the spine. Both ids must exist (mirrors BookEpubWriter.kt).
+      // 第一页标记为封面，让书架自动显示封面（iOS 侧同样标记）。
+      final coverProperty = index == 1 ? ' properties="cover-image"' : '';
+      manifest.write(
+        '<item id="i$index" href="image-$index.jpg" '
+        'media-type="image/jpeg"$coverProperty/>',
+      );
+      manifest.write(
+        '<item id="c$index" href="c$index.xhtml" '
+        'media-type="application/xhtml+xml"/>',
+      );
+      spine.write('<itemref idref="c$index"/>');
+      nav.write('<li><a href="c$index.xhtml">第 $index 页</a></li>');
+    }
+    final title = _stripExt(name)
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;');
+    final opf =
+        '<package xmlns="http://www.idpf.org/2007/opf" version="3.0">'
+        '<metadata xmlns:dc="http://purl.org/dc/elements/1.1/">'
+        '<dc:title>$title</dc:title>'
+        '<meta name="cover" content="i1"/></metadata>'
+        '<manifest>$manifest</manifest><spine>$spine</spine></package>';
+    final navDoc =
+        '<html xmlns="http://www.w3.org/1999/xhtml" '
+        'xmlns:epub="http://www.idpf.org/2007/ops"><body>'
+        '<nav epub:type="toc"><ol>$nav</ol></nav></body></html>';
+    return (opf: opf, nav: navDoc);
+  }
+
   /// Render a PDF (typical comics are image-only) into the same EPUB shape the
   /// Android PDFBox importer produces, so the shared reader opens it unchanged.
   static Future<List<Map<String, dynamic>>> _pdfToEpub(
@@ -428,7 +559,9 @@ $text = [Text.Encoding]::GetEncoding(936).GetString($bytes)
     String path,
     Directory root,
   ) async {
-    const maxPages = 1000;
+    // Match the Android engine's limits (BookPdfImport.kt): 1..10000 pages.
+    // Converted size is capped at 512 MiB below, same as BookEpubWriter.kt.
+    const maxPages = 10000;
     final document = await PdfDocument.openFile(path);
     try {
       final pages = document.pagesCount;
@@ -448,18 +581,17 @@ $text = [Text.Encoding]::GetEncoding(936).GetString($bytes)
         ),
       );
 
-      final manifest = StringBuffer()
-        ..write(
-          '<item id="nav" href="nav.xhtml" '
-          'media-type="application/xhtml+xml" properties="nav"/>',
-        );
-      final spine = StringBuffer();
-      final nav = StringBuffer();
+      final navigation = pdfEpubNavigation(name, pages);
       for (var index = 1; index <= pages; index++) {
         final page = await document.getPage(index);
+        // Match Android's BookPdfImport.kt raster policy exactly: cap the
+        // long edge at 1800px (and font-scale at 120/72). The old 1.4x upscale
+        // was pure interpolation and pushed full-color comics (e.g. a
+        // 387-page color volume) past the shared 512 MiB archive cap.
+        final scale = pdfRenderScale(page.width, page.height);
         final image = await page.render(
-          width: page.width * 1.4,
-          height: page.height * 1.4,
+          width: page.width * scale,
+          height: page.height * scale,
           format: PdfPageImageFormat.jpeg,
           quality: 88,
         );
@@ -467,13 +599,6 @@ $text = [Text.Encoding]::GetEncoding(936).GetString($bytes)
         if (image == null) throw StateError('第 $index 页渲染失败');
         final imageName = 'image-$index.jpg';
         add(imageName, image.bytes);
-        manifest.write(
-          '<item id="i$index" href="$imageName" media-type="image/jpeg"/>',
-        );
-        spine.write('<itemref idref="c$index"/>');
-        nav.write(
-          '<li><a href="c$index.xhtml">第 $index 页</a></li>',
-        );
         add(
           'c$index.xhtml',
           utf8.encode(
@@ -483,28 +608,10 @@ $text = [Text.Encoding]::GetEncoding(936).GetString($bytes)
           ),
         );
       }
-      final title = _stripExt(name)
-          .replaceAll('&', '&amp;')
-          .replaceAll('<', '&lt;')
-          .replaceAll('>', '&gt;');
-      add(
-        'content.opf',
-        utf8.encode(
-          '<package xmlns="http://www.idpf.org/2007/opf" version="3.0">'
-          '<metadata xmlns:dc="http://purl.org/dc/elements/1.1/">'
-          '<dc:title>$title</dc:title></metadata>'
-          '<manifest>$manifest</manifest><spine>$spine</spine></package>',
-        ),
-      );
-      add(
-        'nav.xhtml',
-        utf8.encode(
-          '<html xmlns="http://www.w3.org/1999/xhtml" '
-          'xmlns:epub="http://www.idpf.org/2007/ops"><body>'
-          '<nav epub:type="toc"><ol>$nav</ol></nav></body></html>',
-        ),
-      );
+      add('content.opf', utf8.encode(navigation.opf));
+      add('nav.xhtml', utf8.encode(navigation.nav));
       final bytes = ZipEncoder().encode(archive);
+      // Match the Android engine (BookEpubWriter.kt / MAX_ARCHIVE = 512 MiB).
       if (bytes.length > 512 * 1024 * 1024) {
         throw StateError('转换后的 PDF 超过 512 MiB');
       }

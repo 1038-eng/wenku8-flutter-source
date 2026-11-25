@@ -138,7 +138,36 @@ const localMaleVoice = SpeechVoice(
   locale: 'zh-CN',
   offline: true,
 );
-const builtinLocalVoices = <SpeechVoice>[localFemaleVoice, localMaleVoice];
+// 同一套 Kokoro v1.1 模型内置多个说话人，仅靠 sid 区分，不增加安装包体积。
+// sid 来自 model.int8.onnx 的 id2speaker 元数据（zm_009→58、zm_011→60、zm_016→65）。
+const localMaleVoice2 = SpeechVoice(
+  id: 'kokoro-zm-009',
+  label: '砚舟 · 内置离线男声',
+  source: ListeningSource.local,
+  locale: 'zh-CN',
+  offline: true,
+);
+const localMaleVoice3 = SpeechVoice(
+  id: 'kokoro-zm-011',
+  label: '清和 · 内置离线男声',
+  source: ListeningSource.local,
+  locale: 'zh-CN',
+  offline: true,
+);
+const localMaleVoice4 = SpeechVoice(
+  id: 'kokoro-zm-016',
+  label: '墨白 · 内置离线男声',
+  source: ListeningSource.local,
+  locale: 'zh-CN',
+  offline: true,
+);
+const builtinLocalVoices = <SpeechVoice>[
+  localFemaleVoice,
+  localMaleVoice,
+  localMaleVoice2,
+  localMaleVoice3,
+  localMaleVoice4,
+];
 
 /// Installed engines are used exclusively through the host's public TTS API.
 bool supportedSystemSpeechEngine(String? engine) =>

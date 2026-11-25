@@ -508,6 +508,25 @@ class BookDocuments {
     if (book.error != null ||
         book.path == null && book.reference == null ||
         RegExp(r'\.(txt|epub)$', caseSensitive: false).hasMatch(book.name)) {
+      // macOS sandbox: an NSOpenPanel/drag path is only authorized in this
+      // isolate. The importer reopens it in a compute() isolate, so stage a
+      // container copy first. releaseBooks() removes it after import.
+      if (Platform.isMacOS && book.path != null) {
+        final staged = await DesktopBookDocuments.stageExternal(
+          book.path!,
+          book.name,
+        );
+        if (staged != book.path) {
+          return [
+            BookDocumentSelection(
+              name: book.name,
+              path: staged,
+              originReference: book.originReference,
+              originName: book.originName,
+            ),
+          ];
+        }
+      }
       return [book];
     }
     try {
@@ -583,7 +602,7 @@ class BookDocuments {
     String path, {
     String encoding = 'auto',
   }) async => LocalPlatform.desktop
-      ? DesktopBookDocuments.decodeDirect(path)
+      ? DesktopBookDocuments.decodeDirectToFile(path)
       : (await channel.invokeMethod<String>('decodeTextFile', {
           'path': path,
           'encoding': encoding,

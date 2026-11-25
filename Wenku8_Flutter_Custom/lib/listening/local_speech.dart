@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -12,8 +13,15 @@ const _assetPrefix = 'assets/models/tts/';
 const _modelKey = 'kokoro';
 
 // sid values come from the id2speaker metadata embedded in model.int8.onnx
-// of kokoro-int8-multi-lang-v1_1: zf_001 -> 3, zm_010 -> 59.
-const _femaleSpeakerId = 3;
+// of kokoro-int8-multi-lang-v1_1: zf_001 -> 3; zm_009 -> 58; zm_010 -> 59;
+// zm_011 -> 60; zm_016 -> 65. All share one engine; only the sid differs.
+const _speakerIds = <String, int>{
+  'kokoro-zf-001': 3,
+  'kokoro-zm-009': 58,
+  'kokoro-zm-010': 59,
+  'kokoro-zm-011': 60,
+  'kokoro-zm-016': 65,
+};
 const _maleSpeakerId = 59;
 
 // Bump when the bundled model changes so an app update re-extracts it.
@@ -21,15 +29,172 @@ const _modelManifest = 'sherpa-tts-kokoro-v1';
 
 /// sherpa-onnx Kokoro 本地 TTS 的串行客户端。
 ///
-/// 一个 App 生命周期内只创建一个实例；Kokoro 男女声共用一套模型，只用一个
-/// [sherpa.OfflineTts] 实例，全部合成调用串行化，避免 FFI 并发与重复加载模型。
+/// 模型解压、引擎初始化与 `tts.generate()`（同步 FFI）全部在常驻后台
+/// isolate 完成；UI isolate 只收发请求与结果，切换离线音色时不再卡住界面。
+/// 一个 App 生命周期内只有一个 worker，Kokoro 男女声共用一套模型/引擎。
 class LocalSpeechClient {
   LocalSpeechClient();
 
+  Isolate? _worker;
+  SendPort? _port;
+  ReceivePort? _messages;
+  Future<void>? _starting;
+  int _nextId = 0;
+  final _pending = <int, Completer<Uint8List>>{};
+  bool _disposed = false;
+
+  void _failPending(Object error) {
+    for (final request in _pending.values) {
+      if (!request.isCompleted) request.completeError(error);
+    }
+    _pending.clear();
+  }
+
+  Future<void> _startWorker() async {
+    final ready = Completer<SendPort>();
+    final messages = ReceivePort();
+    _messages = messages;
+    messages.listen(
+      (message) {
+        if (message is List && message.length >= 2 && message[0] == 'ready') {
+          final port = message[1] as SendPort;
+          _port = port;
+          if (!ready.isCompleted) ready.complete(port);
+          return;
+        }
+        if (message is! List || message.length < 2) return;
+        final id = message[0] as int;
+        final request = _pending.remove(id);
+        if (request == null) return;
+        if (message[1] == true) {
+          request.complete(message[2] as Uint8List);
+        } else {
+          request.completeError(
+            SpeechFailure(
+              message[2] as String,
+              kind: SpeechFailureKind.unavailable,
+            ),
+          );
+        }
+      },
+      onError: _failPending,
+      onDone: () => _failPending(
+        const SpeechFailure(
+          '离线语音引擎已退出，请重试',
+          kind: SpeechFailureKind.unavailable,
+        ),
+      ),
+    );
+    try {
+      _worker = await Isolate.spawn(_speechWorker, (
+        messages.sendPort,
+        ServicesBinding.rootIsolateToken,
+      ));
+      await ready.future;
+    } catch (_) {
+      _failPending(
+        const SpeechFailure(
+          '离线语音引擎未能启动，请重试',
+          kind: SpeechFailureKind.unavailable,
+        ),
+      );
+      _cleanup();
+      rethrow;
+    }
+  }
+
+  Future<void> _ensureWorker() {
+    if (_disposed) throw StateError('本地语音客户端已关闭');
+    if (_port != null) return Future.value();
+    return _starting ??= _startWorker().catchError((Object error) {
+      _starting = null;
+      throw error;
+    });
+  }
+
+  void _cleanup() {
+    _worker?.kill(priority: Isolate.immediate);
+    _worker = null;
+    _port = null;
+    _messages?.close();
+    _messages = null;
+  }
+
+  /// 合成一段文本并返回带 RIFF 头的单声道 16-bit PCM WAV。
+  Future<Uint8List> synthesize(
+    String text,
+    SpeechVoice voice,
+    SpeechCancellation cancellation,
+  ) async {
+    cancellation.check();
+    await _ensureWorker();
+    cancellation.check();
+    final id = ++_nextId;
+    final result = Completer<Uint8List>();
+    _pending[id] = result;
+    final sid = _speakerIds[voice.id] ?? _maleSpeakerId;
+    _port!.send([id, text, sid]);
+    try {
+      final bytes = await result.future;
+      cancellation.check();
+      return bytes;
+    } catch (_) {
+      _pending.remove(id);
+      rethrow;
+    }
+  }
+
+  /// 提前拉起后台 worker 并初始化模型，避免第一段朗读时把解压时间算进
+  /// 播放准备超时而被跳过。失败静默，实际 synthesize 时会再报错。
+  void warmUp() {
+    if (_disposed) return;
+    unawaited(_ensureWorker().catchError((Object _) {}));
+  }
+
+  void dispose() {
+    _disposed = true;
+    _cleanup();
+    _failPending(StateError('本地语音客户端已关闭'));
+    _starting = null;
+  }
+}
+
+/// 常驻后台 worker：解压模型、初始化 sherpa 引擎、串行合成。
+/// 这里发生的任何同步 FFI 都不会阻塞 UI。
+void _speechWorker((SendPort, RootIsolateToken?) message) {
+  final (port, token) = message;
+  if (token != null) {
+    BackgroundIsolateBinaryMessenger.ensureInitialized(token);
+  }
+  final commands = ReceivePort();
+  port.send(['ready', commands.sendPort]);
+
+  final client = _WorkerSpeech();
+  // 模型解压与引擎初始化在 worker 空闲时提前完成，用户点朗读时不必再等。
+  unawaited(
+    client._tts().then<void>(
+      (_) {},
+      onError: (Object _, StackTrace _) {},
+    ),
+  );
+  commands.listen((message) async {
+    if (message is! List || message.length < 3) return;
+    final id = message[0] as int;
+    final text = message[1] as String;
+    final sid = message[2] as int;
+    try {
+      final bytes = await client.generate(text, sid);
+      port.send([id, true, bytes]);
+    } catch (error) {
+      port.send([id, false, '$error']);
+    }
+  });
+}
+
+class _WorkerSpeech {
   bool _bindingsReady = false;
   Future<Directory>? _modelsDirectory;
   Future<sherpa.OfflineTts>? _engine;
-  Future<void> _queue = Future.value();
 
   Future<Directory> _models() => _modelsDirectory ??= _extractModels();
 
@@ -49,8 +214,6 @@ class LocalSpeechClient {
       return directory;
     }
 
-    // The asset bundle contains nested espeak-ng-data/ files, so enumerate
-    // the asset manifest instead of hard-coding a flat file list.
     final bundle = await AssetManifest.loadFromAssetBundle(rootBundle);
     final keys =
         bundle
@@ -117,8 +280,6 @@ class LocalSpeechClient {
           model: '$base${sep}model.int8.onnx',
           voices: '$base${sep}voices.bin',
           tokens: '$base${sep}tokens.txt',
-          // sherpa-onnx >= 2.0 ignores dataDir/lang; the lexicons decide
-          // which languages are available.
           lexicon: '$base${sep}lexicon-us-en.txt,$base${sep}lexicon-zh.txt',
         ),
         numThreads: 1,
@@ -135,29 +296,8 @@ class LocalSpeechClient {
     }
   }
 
-  /// 合成一段文本并返回带 RIFF 头的单声道 16-bit PCM WAV。
-  Future<Uint8List> synthesize(
-    String text,
-    SpeechVoice voice,
-    SpeechCancellation cancellation,
-  ) {
-    cancellation.check();
-    final result = _queue.then((_) => _generate(text, voice, cancellation));
-    _queue = result.then<void>((_) {}, onError: (Object _, StackTrace _) {});
-    return result;
-  }
-
-  Future<Uint8List> _generate(
-    String text,
-    SpeechVoice voice,
-    SpeechCancellation cancellation,
-  ) async {
-    cancellation.check();
+  Future<Uint8List> generate(String text, int sid) async {
     final tts = await _tts();
-    cancellation.check();
-    final sid = voice.id == localFemaleVoice.id
-        ? _femaleSpeakerId
-        : _maleSpeakerId;
     final audio = tts.generate(text: text, sid: sid, speed: 1.0);
     if (audio.samples.isEmpty || audio.sampleRate <= 0) {
       throw const SpeechFailure(
@@ -165,7 +305,6 @@ class LocalSpeechClient {
         kind: SpeechFailureKind.content,
       );
     }
-    cancellation.check();
     return _wav(audio.samples, audio.sampleRate);
   }
 }

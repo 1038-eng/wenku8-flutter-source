@@ -92,7 +92,10 @@ class ArchiveFeaturePage extends StatelessWidget {
 
 EdgeInsets featurePadding(BuildContext context) => EdgeInsets.fromLTRB(
   24,
-  MediaQuery.paddingOf(context).top + FrostedHeader.toolbarHeight + 20,
+  MediaQuery.paddingOf(context).top +
+      FrostedHeader.toolbarHeight +
+      FrostedHeader.featherHeight +
+      20,
   24,
   MediaQuery.paddingOf(context).bottom + 32,
 );
