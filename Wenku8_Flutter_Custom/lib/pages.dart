@@ -10447,10 +10447,13 @@ class _ReaderPageState extends State<ReaderPage>
           left: safe.left,
           right: safe.right,
           // Hidden information and visible controls share this fixed viewport.
+          // Reserve room for the floating chapter-progress bar + dock so the
+          // last text lines are never covered by the glass chrome.
           bottom:
               safe.bottom +
               prefs.marginBottom +
-              ReaderScrollLocation.extentOf(context),
+              ReaderScrollLocation.extentOf(context) +
+              DockLayout.readerChromeClearance(context),
         ),
         child: ClipRect(
           key: const ValueKey('reader-scroll-safe-viewport'),

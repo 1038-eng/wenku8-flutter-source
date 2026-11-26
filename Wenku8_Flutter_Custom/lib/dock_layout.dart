@@ -54,4 +54,15 @@ abstract final class DockLayout {
   static double scrollPaddingOf(BuildContext context) => _ios
       ? bottomPaddingOf(context) + heightOf(context) + 20
       : MediaQuery.paddingOf(context).bottom + 120;
+
+  /// Extra viewport inset for the reader's floating chrome (compact chapter
+  /// progress bar + gap + action dock). The information row only reserves its
+  /// own height, so without this the last text lines sit under the glass bar.
+  static const chapterProgressHeight = 44.0;
+  static const chromeGap = 10.0;
+
+  /// Height of the floating progress bar plus dock, excluding safe area and
+  /// user margin (already added by the reader viewport).
+  static double readerChromeClearance(BuildContext context) =>
+      heightOf(context) + chromeGap + chapterProgressHeight;
 }
