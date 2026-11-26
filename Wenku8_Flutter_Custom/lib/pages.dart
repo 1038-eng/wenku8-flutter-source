@@ -3253,40 +3253,48 @@ class SettingsPage extends StatelessWidget {
             value: state.openRecentOnLaunch,
             onChanged: state.setOpenRecentOnLaunch,
           ),
-          const Divider(height: 22),
-          _toggleSetting(
-            context,
-            keyName: 'settings-combined-shelf',
-            icon: CupertinoIcons.square_stack,
-            title: '合并书架',
-            description: '收藏与本地书统一显示在书架，试读缓存不加入',
-            value: state.combinedShelf,
-            onChanged: (value) => state.setNavigationMode(combinedShelf: value),
-          ),
-          const Divider(height: 22),
-          _toggleSetting(
-            context,
-            keyName: 'settings-adapt-offline',
-            icon: CupertinoIcons.wifi_slash,
-            title: '离线适配',
-            description: state.combinedShelf
-                ? '断网后隐藏发现，书架保留已缓存的收藏和本地书籍'
-                : '断网后隐藏发现，书架只显示已缓存的收藏',
-            value: state.adaptWhenOffline,
-            onChanged: (value) =>
-                state.setNavigationMode(adaptWhenOffline: value),
-          ),
-          const Divider(height: 22),
-          _toggleSetting(
-            context,
-            keyName: 'settings-local-reader-mode',
-            icon: CupertinoIcons.book,
-            title: '阅读器模式',
-            description: state.combinedShelf ? '只显示离线可读的合并书架和我的' : '只显示本地和我的',
-            value: state.localReaderMode,
-            onChanged: (value) =>
-                state.setNavigationMode(localReaderMode: value),
-          ),
+          // iPhone 定制版只保留「本地书架 + 我的」两页，tab 由 home_navigation
+          // 固定，这三个开关在 iOS 上点了不会改变界面，故整体隐藏，避免误导。
+          // 桌面/安卓端不受影响，仍可正常切换合并书架、离线适配与阅读器模式。
+          if (!LocalPlatform.ios) ...[
+            const Divider(height: 22),
+            _toggleSetting(
+              context,
+              keyName: 'settings-combined-shelf',
+              icon: CupertinoIcons.square_stack,
+              title: '合并书架',
+              description: '收藏与本地书统一显示在书架，试读缓存不加入',
+              value: state.combinedShelf,
+              onChanged: (value) =>
+                  state.setNavigationMode(combinedShelf: value),
+            ),
+            const Divider(height: 22),
+            _toggleSetting(
+              context,
+              keyName: 'settings-adapt-offline',
+              icon: CupertinoIcons.wifi_slash,
+              title: '离线适配',
+              description: state.combinedShelf
+                  ? '断网后隐藏发现，书架保留已缓存的收藏和本地书籍'
+                  : '断网后隐藏发现，书架只显示已缓存的收藏',
+              value: state.adaptWhenOffline,
+              onChanged: (value) =>
+                  state.setNavigationMode(adaptWhenOffline: value),
+            ),
+            const Divider(height: 22),
+            _toggleSetting(
+              context,
+              keyName: 'settings-local-reader-mode',
+              icon: CupertinoIcons.book,
+              title: '阅读器模式',
+              description: state.combinedShelf
+                  ? '只显示离线可读的合并书架和我的'
+                  : '只显示本地和我的',
+              value: state.localReaderMode,
+              onChanged: (value) =>
+                  state.setNavigationMode(localReaderMode: value),
+            ),
+          ],
         ],
       ),
     ),
