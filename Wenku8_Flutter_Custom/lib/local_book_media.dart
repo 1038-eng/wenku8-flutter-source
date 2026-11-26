@@ -175,6 +175,21 @@ class LocalBookMedia {
     return result;
   }
 
+  /// First archive read is slow; keep the decoded source beside the book so
+  /// later turns use the same plain-file path as staged cover pages.
+  static Future<void> _writeImageCache(
+    String directory,
+    String name,
+    Uint8List bytes,
+  ) async {
+    if (bytes.isEmpty || bytes.length > 8 * 1024 * 1024) return;
+    try {
+      await File('$directory/$name').writeAsBytes(bytes);
+    } catch (_) {
+      /* The archive original remains the fallback. */
+    }
+  }
+
   static Future<_LocalImageBatch> _readBatch(
     Directory root,
     int id,
@@ -217,6 +232,11 @@ class LocalBookMedia {
       final batch = batchReader?.call(id, missing);
       if (batch != null) {
         result.addAll(await batch);
+        await Future.wait([
+          for (final name in missing)
+            if (result[name]?.bytes case final bytes?)
+              _writeImageCache(directory, name, bytes),
+        ]);
         return resolved();
       }
     } catch (error, stack) {
@@ -249,6 +269,11 @@ class LocalBookMedia {
             original: LocalDocumentInput.file('$directory/original'),
           )),
         );
+        await Future.wait([
+          for (final name in archived)
+            if (result[name]?.bytes case final bytes?)
+              _writeImageCache(directory, name, bytes),
+        ]);
       } catch (error, stack) {
         for (final name in archived) {
           failures[name] = (error, stack);
@@ -330,6 +355,7 @@ class LocalBookMedia {
                 directory: directory,
                 name: uri.path.substring(1),
               )));
+      await _writeImageCache(directory, uri.path.substring(1), bytes);
     }
     return bytes;
   }

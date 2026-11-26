@@ -879,6 +879,7 @@ class _ReaderPagedViewState extends State<ReaderPagedView>
       final padding = widget.padding,
           style = _layoutStyle,
           prefs = widget.preferences;
+      final pixelRatio = MediaQuery.devicePixelRatioOf(context);
       unawaited(() async {
         bool current() => mounted && _adjacentRequests[direction] == key;
         try {
@@ -890,6 +891,14 @@ class _ReaderPagedViewState extends State<ReaderPagedView>
                     ? chapter.content.illustrations.reversed.take(4)
                     : const [],
               );
+          if (!current()) return;
+          await ReaderIllustrationCache.shared.precacheLocalImages(
+            images,
+            // ignore: use_build_context_synchronously
+            context: context,
+            available: layout.pageSize,
+            devicePixelRatio: pixelRatio,
+          );
           if (!current()) return;
           final pages = await paginateReader(
             content: chapter.content,

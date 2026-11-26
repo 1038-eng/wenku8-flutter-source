@@ -1,3 +1,4 @@
+import 'dart:async' show unawaited;
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
@@ -1476,6 +1477,7 @@ Future<_ImportedFile> _importOriginal(_ImportJob job) async {
     if (isEpub) {
       buffer = document?.open();
       final verifiedImages = <String>{};
+      var stagedImages = 0;
       final stream = buffer?.stream ?? InputMemoryStream(job.input!.bytes);
       final recovered = job.recoverDamagedEpub
           ? readLocalBookArchiveForRecovery(stream, maxSize: 1024 * 1024 * 1024)
@@ -1505,9 +1507,11 @@ Future<_ImportedFile> _importOriginal(_ImportJob job) async {
         ).writeAsStringSync(body, mode: FileMode.append),
         saveImage: (name, image) {
           media[name] = image.name;
-          // Covers remain immediately readable for large book lists. All other
-          // illustrations retain their original bytes in the single EPUB copy.
-          if (name.startsWith('cover.')) {
+          // The cover and the first few pages are read from plain files, not
+          // from the archive, so a comic opens without a zip seek. Later pages
+          // are cached on first read by LocalBookMedia.
+          if (stagedImages < 4) {
+            stagedImages++;
             final bytes = readLocalBookArchiveEntry(image);
             verifiedImages.add(image.name);
             File('${staging.path}/$name').writeAsBytesSync(bytes);
@@ -2016,6 +2020,41 @@ class LocalBookStore extends ChangeNotifier
       ..addAll(covers);
   }
 
+  /// Replace a full-size imported cover with a shelf-sized preview. The full
+  /// first page stays in the original EPUB, so reading is unaffected.
+  Future<bool> _compactCoverIfNeeded(int id, Novel novel) async {
+    final url = novel.coverUrl;
+    if (url == null || !url.startsWith('wenku-local:')) return false;
+    final uri = Uri.tryParse(url);
+    if (uri == null ||
+        !RegExp(r'^/cover\.(png|jpe?g|webp|gif)$').hasMatch(uri.path)) {
+      return false;
+    }
+    final file = File('${directory.path}/$id${uri.path}');
+    if (!await file.exists()) return false;
+    final bytes = await file.readAsBytes();
+    if (bytes.length <= 96 * 1024) return false;
+    try {
+      final small = await prepareCoverThumbnail(bytes);
+      if (small.length >= bytes.length) return false;
+      await file.writeAsBytes(small, flush: true);
+      LocalBookMedia.evict(id);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// One bounded pass over existing books so old comics benefit immediately.
+  Future<void> _compactLargeCovers() async {
+    var done = 0;
+    for (final entry in _books.entries) {
+      if (_coverOverrides.containsKey(entry.key)) continue;
+      if (await _compactCoverIfNeeded(entry.key, entry.value)) done++;
+      if (done >= 8) break;
+    }
+  }
+
   Future<Novel> setCover(int id, String path) async {
     final bytes = await preparePersonalImage(path, cover: true);
     return _setCoverBytes(id, bytes);
@@ -2253,6 +2292,7 @@ class LocalBookStore extends ChangeNotifier
       ..clear()
       ..addAll(loaded.covers);
     coverError = loaded.coverError;
+    unawaited(_compactLargeCovers());
     await _refreshSeries();
     if (!_disposed) notifyListeners();
   }
@@ -2367,6 +2407,7 @@ class LocalBookStore extends ChangeNotifier
         );
       }
       if (imported.novel != null) {
+        await _compactCoverIfNeeded(imported.id, imported.novel!);
         _books[imported.id] = imported.novel!;
         _sources[imported.id] = imported.source!;
         await _refreshSeries(originals: {imported.id});

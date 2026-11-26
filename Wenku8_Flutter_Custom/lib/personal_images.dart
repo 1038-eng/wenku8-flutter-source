@@ -1,8 +1,46 @@
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:path_provider/path_provider.dart';
+
+/// Shelf-sized cover used by imported books. Comic first pages are often
+/// 1400px or larger; decoding them in a scrolling grid is the main source of
+/// slow library loading. Keep a small PNG beside the book instead.
+Future<Uint8List> prepareCoverThumbnail(
+  Uint8List bytes, {
+  int maxDimension = 360,
+}) async {
+  if (bytes.isEmpty || bytes.length > 20 * 1024 * 1024) {
+    throw const FormatException('封面图片无效');
+  }
+  final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
+  ui.ImageDescriptor? descriptor;
+  ui.Codec? codec;
+  ui.Image? image;
+  try {
+    descriptor = await ui.ImageDescriptor.encoded(buffer);
+    final width = descriptor.width, height = descriptor.height;
+    if (width <= 0 || height <= 0) {
+      throw const FormatException('封面图片无效');
+    }
+    final scale = (maxDimension / math.max(width, height)).clamp(0.0, 1.0);
+    codec = await descriptor.instantiateCodec(
+      targetWidth: math.max(1, (width * scale).round()),
+      targetHeight: math.max(1, (height * scale).round()),
+    );
+    image = (await codec.getNextFrame()).image;
+    final data = await image.toByteData(format: ui.ImageByteFormat.png);
+    if (data == null) throw const FormatException('封面处理未完成');
+    return data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
+  } finally {
+    image?.dispose();
+    codec?.dispose();
+    descriptor?.dispose();
+    buffer.dispose();
+  }
+}
 
 /// Decode once at import time. Reading and shelf animations only use the
 /// bounded, application-owned still image, never the picker URI or original.

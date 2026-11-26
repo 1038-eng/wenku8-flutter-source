@@ -362,6 +362,37 @@ class ReaderIllustrationCache {
       }
     });
   }
+
+  /// Decode the next comic page before it turns. Encoded bytes are already
+  /// resident after measurement; this only primes Flutter's pixel cache so a
+  /// page turn does not start from a blank skeleton.
+  Future<void> precacheLocalImages(
+    Map<String, Size> sizes, {
+    required BuildContext context,
+    required Size available,
+    required double devicePixelRatio,
+  }) async {
+    await Future.wait(sizes.entries.take(2).map((entry) async {
+      final url = entry.key;
+      if (!url.startsWith('wenku-local:')) return;
+      final request = _requestFor(url);
+      final bytes = await request.future;
+      if (!_current(url, request.source)) return;
+      final width = readerIllustrationDecodeWidth(
+        imageSize: entry.value,
+        available: available,
+        devicePixelRatio: devicePixelRatio,
+      );
+      final provider = _decodeProvider(url, bytes, request.source, width);
+      // The caller checks `mounted` immediately before this call; the image
+      // provider itself resolves against the shared cache, not page state.
+      // ignore: use_build_context_synchronously
+      await precacheImage(provider, context);
+      if (_current(url, request.source)) {
+        _decoded(url, bytes, request.source, provider);
+      }
+    }));
+  }
 }
 
 /// Decode the pixels that can actually be drawn, then retain the established
