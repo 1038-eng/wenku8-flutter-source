@@ -10144,6 +10144,18 @@ class _ReaderPageState extends State<ReaderPage>
             ),
           ),
           Positioned.fill(
+            child: ReaderChromeScrim(
+              key: const ValueKey('reader-chrome-paper-scrim'),
+              animation: _chrome,
+              paper: _readerPreferences.background(appDark),
+              topExtent:
+                  _readerHeaderTop(context) +
+                  _readerHeaderExtent(context) +
+                  16,
+              bottomExtent: DockLayout.readerScrimBottomExtentOf(context),
+            ),
+          ),
+          Positioned.fill(
             child: ReaderChromeLayer(
               key: const ValueKey('reader-chrome-edge-blur'),
               animation: _chrome,
@@ -10446,14 +10458,13 @@ class _ReaderPageState extends State<ReaderPage>
               prefs.marginTop,
           left: safe.left,
           right: safe.right,
-          // Hidden information and visible controls share this fixed viewport.
-          // Reserve room for the floating chapter-progress bar + dock so the
-          // last text lines are never covered by the glass chrome.
+          // Keep the full reading viewport when controls are hidden. The
+          // floating chapter bar and dock only cover a reveal-time paper
+          // scrim, so they never hide article text or leave a permanent gap.
           bottom:
               safe.bottom +
               prefs.marginBottom +
-              ReaderScrollLocation.extentOf(context) +
-              DockLayout.readerChromeClearance(context),
+              ReaderScrollLocation.extentOf(context),
         ),
         child: ClipRect(
           key: const ValueKey('reader-scroll-safe-viewport'),
@@ -10682,11 +10693,7 @@ class _ReaderPageState extends State<ReaderPage>
               prefs.rightMargin + safe.right,
               pagedBottomInset +
                   prefs.marginBottom +
-                  ReaderScrollLocation.extentOf(context) +
-                  // The compact chapter bar + action dock float above this
-                  // viewport; reserve their height or the last lines sit under
-                  // them. The scroll mode already does the same.
-                  DockLayout.readerChromeClearance(context),
+                  ReaderScrollLocation.extentOf(context),
             );
             ReaderPagedChapter? adjacent(int direction) {
               final index = _chapter + direction;

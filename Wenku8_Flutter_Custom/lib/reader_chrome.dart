@@ -177,6 +177,78 @@ class ReaderChromeLayer extends StatelessWidget {
   );
 }
 
+/// Hides the article lines that sit behind the floating progress bar and dock
+/// while controls are revealed. Keeping this as a reveal-only scrim lets the
+/// reading viewport use the full height when controls are hidden, instead of
+/// leaving a permanent empty band above the home indicator.
+class ReaderChromeScrim extends StatelessWidget {
+  const ReaderChromeScrim({
+    super.key,
+    required this.animation,
+    required this.paper,
+    required this.topExtent,
+    required this.bottomExtent,
+  });
+
+  final Animation<double> animation;
+  final Color paper;
+  final double topExtent, bottomExtent;
+
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+    animation: animation,
+    builder: (context, _) {
+      final strength = Curves.easeInOut.transform(animation.value);
+      if (strength <= 0 || (topExtent <= 0 && bottomExtent <= 0)) {
+        return const SizedBox.shrink();
+      }
+      final opaque = paper.withValues(alpha: strength);
+      final clear = paper.withValues(alpha: 0);
+      return IgnorePointer(
+        ignoring: true,
+        child: Stack(
+          children: [
+            if (topExtent > 0)
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                height: topExtent,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [opaque, opaque, clear],
+                      stops: const [0, .72, 1],
+                    ),
+                  ),
+                ),
+              ),
+            if (bottomExtent > 0)
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                height: bottomExtent,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [clear, opaque, opaque],
+                      stops: const [0, .28, 1],
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      );
+    },
+  );
+}
+
 /// Keeps a hidden chrome leaf's geometry without rebuilding it for source
 /// updates. The data source stays live; the first reveal reads its latest value.
 /// Visibility crossings, not animation ticks or TickerMode, own the subscription.

@@ -65,4 +65,11 @@ abstract final class DockLayout {
   /// user margin (already added by the reader viewport).
   static double readerChromeClearance(BuildContext context) =>
       heightOf(context) + chromeGap + chapterProgressHeight;
+
+  /// Paper scrim height that covers the floating controls including their
+  /// home-indicator gutter. Used only while reader chrome is revealed.
+  static double readerScrimBottomExtentOf(BuildContext context) =>
+      bottomPaddingOf(context, viewPadding: true) +
+      readerChromeClearance(context) +
+      8;
 }
