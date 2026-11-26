@@ -103,7 +103,11 @@ class ReaderPagePhysics extends PageScrollPhysics {
         spring,
         position.pixels,
         pixels,
-        math.max(-2400.0, math.min(2400.0, velocity)) * durationScale,
+        // Do not scale the release velocity. _ReaderPageSnap already slows the
+        // whole animation via time / durationScale; scaling both the initial
+        // velocity and time cancels out for finger-driven turns, so "舒缓"
+        // felt identical to "标准". Keep the real velocity, stretch time only.
+        math.max(-2400.0, math.min(2400.0, velocity)),
         tolerance: tolerance,
       ),
       from: position.pixels,

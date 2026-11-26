@@ -10682,7 +10682,11 @@ class _ReaderPageState extends State<ReaderPage>
               prefs.rightMargin + safe.right,
               pagedBottomInset +
                   prefs.marginBottom +
-                  ReaderScrollLocation.extentOf(context),
+                  ReaderScrollLocation.extentOf(context) +
+                  // The compact chapter bar + action dock float above this
+                  // viewport; reserve their height or the last lines sit under
+                  // them. The scroll mode already does the same.
+                  DockLayout.readerChromeClearance(context),
             );
             ReaderPagedChapter? adjacent(int direction) {
               final index = _chapter + direction;
