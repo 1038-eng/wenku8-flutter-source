@@ -591,9 +591,11 @@ private final class ZipReader {
       return body.withUnsafeBytes { raw -> Data? in
         guard raw.baseAddress != nil else { return nil }
         var source = z_stream()
-        // zlib requires inflateInit before inflate; without it inflate returns
+        // zlib requires an init call before inflate; without it inflate returns
         // Z_STREAM_ERROR and every deflated DOCX entry fails to decompress.
-        guard inflateInit(&source) == Z_OK else { return nil }
+        // inflateInit is a C macro invisible to Swift; call the underlying
+        // function with the default 15-bit window bits.
+        guard inflateInit2_(&source, 15, ZLIB_VERSION, Int32(MemoryLayout<z_stream>.size)) == Z_OK else { return nil }
         source.next_in = UnsafeMutablePointer<Bytef>(mutating: raw.baseAddress?.assumingMemoryBound(to: Bytef.self))
         source.avail_in = uInt(min(body.count, Int.max))
         defer { inflateEnd(&source) }
