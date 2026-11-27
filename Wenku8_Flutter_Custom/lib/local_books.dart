@@ -240,6 +240,58 @@ Novel _novel(
   navigation: navigation,
 );
 
+/// System file pickers and staging copies can hand the importer a name like
+/// `import-A1B2C3D4-....epub`. That is a transport identifier, not a book title.
+final RegExp temporaryLocalBookName = RegExp(
+  r'^(?:import|decoded|pickbook|source)[\s_-]*'
+  r'(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4,12}|\d{5,}(?:-\d+)?)'
+  r'(?:\.[^.]+)?$',
+  caseSensitive: false,
+);
+
+bool isTemporaryLocalBookTitle(String value) {
+  final title = value.trim();
+  return title.isEmpty || temporaryLocalBookName.hasMatch(title);
+}
+
+String? _readableDocumentTitle(String markup) {
+  final document = html.parse(markup);
+  for (final selector in ['title', 'h1', 'h2']) {
+    final node = document.querySelector(selector);
+    if (node == null) continue;
+    final text = node.text.replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (text.isNotEmpty && text.length <= 120 && !isTemporaryLocalBookTitle(text)) {
+      return text;
+    }
+  }
+  return null;
+}
+
+/// First readable EPUB document title. Used only when the package metadata and
+/// the original filename are both missing a real title.
+String? _ebookTitleFromArchiveFiles(Map<String, ArchiveFile> files) {
+  final pages = files.entries
+      .where(
+        (entry) =>
+            RegExp(r'\.(?:x?html|htm)$', caseSensitive: false).hasMatch(entry.key) &&
+            !entry.key.startsWith('meta-inf/') &&
+            entry.value.size <= 2 * 1024 * 1024,
+      )
+      .toList()
+    ..sort((a, b) => a.key.compareTo(b.key));
+  for (final page in pages.take(12)) {
+    try {
+      final title = _readableDocumentTitle(
+        decodeLocalMarkup(readLocalBookArchiveEntry(page.value)),
+      );
+      if (title != null) return title;
+    } catch (_) {
+      /* A broken chapter must not stop the next one from supplying a title. */
+    }
+  }
+  return null;
+}
+
 /// Entries are decoded lazily, only after declared sizes and names are checked.
 /// No archive-supplied path is ever used as a filesystem destination.
 Archive boundedZip(
@@ -1503,15 +1555,18 @@ ImportedBook _epub(
         ? meta('calibre:series_index')
         : meta('group-position'),
   );
+  final namedTitle = title.isNotEmpty
+      ? title
+      : input.name.replaceFirst(RegExp(r'\.epub$', caseSensitive: false), '');
+  // A staging name such as import-<UUID> is not a title. Fall back to the first
+  // document's own heading before showing it on the shelf.
+  final resolvedTitle = isTemporaryLocalBookTitle(namedTitle)
+      ? _ebookTitleFromArchiveFiles(files) ?? namedTitle
+      : namedTitle;
   return ImportedBook(
     _novel(
       id,
-      title.isEmpty
-          ? input.name.replaceFirst(
-              RegExp(r'\.epub$', caseSensitive: false),
-              '',
-            )
-          : title,
+      resolvedTitle,
       field('creator'),
       chapters,
       cover: coverUrl,
@@ -1533,7 +1588,7 @@ ImportedBook _epub(
             collectionNumber.isFinite &&
             collectionNumber > 0
         ? LocalSeriesHint(_metadataText(collection), collectionNumber)
-        : inferLocalSeries(title) ?? inferLocalSeries(input.name),
+        : inferLocalSeries(resolvedTitle) ?? inferLocalSeries(input.name),
   );
 }
 
@@ -1901,6 +1956,30 @@ class _LocalLibrarySnapshot {
 // Metadata can contain thousands of chapters per book. Read, decode and build
 // those directories together off the UI isolate; do not ship JSON back for the
 // first visible frame to parse. Originals and chapter bodies are never opened.
+/// Reads only the first document headings from an on-disk original. Used by the
+/// one-time repair of books imported under a staging name.
+Future<String?> _readEpubTitleFromOriginal(String path) async {
+  try {
+    final file = File(path);
+    if (!await file.exists() || await file.length() > 1024 * 1024 * 1024) {
+      return null;
+    }
+    final archive = boundedZip(await file.readAsBytes());
+    final files = <String, ArchiveFile>{};
+    for (final entry in archive) {
+      if (entry.isFile) {
+        files.putIfAbsent(
+          entry.name.toLowerCase().replaceAll(r'\', '/'),
+          () => entry,
+        );
+      }
+    }
+    return _ebookTitleFromArchiveFiles(files);
+  } catch (_) {
+    return null;
+  }
+}
+
 Future<_LocalLibrarySnapshot> _loadLocalLibrary(String path) async {
   final directory = Directory(path);
   await directory.create(recursive: true);
@@ -2453,7 +2532,76 @@ class LocalBookStore extends ChangeNotifier
     coverError = loaded.coverError;
     unawaited(_compactLargeCovers());
     await _refreshSeries();
+    unawaited(_repairTemporaryTitles());
     if (!_disposed) notifyListeners();
+  }
+
+  /// Books imported from a system staging file can carry an `import-<UUID>`
+  /// title. Repair those from the original archive without changing chapters,
+  /// reading positions or a title the user edited by hand.
+  Future<void> _repairTemporaryTitles() async {
+    final candidates = <int>[];
+    for (final entry in _books.entries) {
+      if (!isTemporaryLocalBookTitle(entry.value.title)) continue;
+      if (await File('${directory.path}/${entry.key}/original').exists()) {
+        candidates.add(entry.key);
+      }
+    }
+    if (candidates.isEmpty) return;
+    for (final id in candidates.take(8)) {
+      final current = _books[id];
+      if (current == null || !isTemporaryLocalBookTitle(current.title)) continue;
+      final title = await compute(
+        _readEpubTitleFromOriginal,
+        '${directory.path}/$id/original',
+      );
+      if (title == null || isTemporaryLocalBookTitle(title)) continue;
+      await _writeTitleOnly(id, title);
+    }
+    await _refreshSeries();
+    if (!_disposed) notifyListeners();
+  }
+
+  Future<bool> _writeTitleOnly(int id, String title) async {
+    final current = _books[id];
+    if (current == null || !isTemporaryLocalBookTitle(current.title)) {
+      return false;
+    }
+    final target = File('${directory.path}/$id/book.json');
+    try {
+      final json = jsonDecode(await target.readAsString()) as Map<String, dynamic>;
+      final novel = Map<String, dynamic>.from(json['novel'] as Map);
+      final previous = novel['title'] as String? ?? '';
+      if (!isTemporaryLocalBookTitle(previous)) return false;
+      final source = Map<String, dynamic>.from(json['source'] as Map? ?? const {});
+      final userMetadata = Map<String, dynamic>.from(
+        source['userMetadata'] as Map? ?? const {},
+      );
+      if (userMetadata['title'] != null && userMetadata['title'] != previous) {
+        return false;
+      }
+      if (userMetadata.isNotEmpty) {
+        userMetadata['title'] = title;
+        source['userMetadata'] = userMetadata;
+        json['source'] = source;
+      }
+      novel['title'] = title;
+      json['novel'] = novel;
+      final next = File('${target.path}.next');
+      try {
+        await next.writeAsString(jsonEncode(json), flush: true);
+        await next.rename(target.path);
+      } finally {
+        if (await next.exists()) await next.delete();
+      }
+      _books[id] = Novel.fromSnapshot({
+        ...current.toSnapshot(),
+        'title': title,
+      }).withChapters(current.chapters);
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
   Future<Novel> import(
