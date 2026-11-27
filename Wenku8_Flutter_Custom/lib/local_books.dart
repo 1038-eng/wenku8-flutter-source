@@ -381,8 +381,86 @@ ImportedBook _epub(
     }
   }
   packageReference ??= fallbackOpf();
+  String? generatedPackage;
   if (packageReference == null || packageReference.trim().isEmpty) {
-    throw const FormatException('EPUB 缺少书籍索引，请重新获取完整原书');
+    // Last resort: the archive may be a plain collection of HTML chapters or
+    // scanned images that was renamed .epub. Build a transient package so the
+    // shared reader can still open it without touching the source archive.
+    String xmlText(String value) => value
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;');
+    int naturalCompare(String a, String b) {
+      final partsA = RegExp(r'\d+|\D+').allMatches(a).map((m) => m.group(0)!).toList();
+      final partsB = RegExp(r'\d+|\D+').allMatches(b).map((m) => m.group(0)!).toList();
+      for (var i = 0; i < partsA.length && i < partsB.length; i++) {
+        final left = partsA[i], right = partsB[i];
+        final leftNumber = int.tryParse(left), rightNumber = int.tryParse(right);
+        if (leftNumber != null && rightNumber != null) {
+          if (leftNumber != rightNumber) return leftNumber.compareTo(rightNumber);
+        } else if (left != right) {
+          return left.compareTo(right);
+        }
+      }
+      return partsA.length.compareTo(partsB.length);
+    }
+
+    const imageMedia = {
+      'jpg': 'image/jpeg',
+      'jpeg': 'image/jpeg',
+      'png': 'image/png',
+      'gif': 'image/gif',
+      'webp': 'image/webp',
+    };
+    bool isPage(String path, Set<String> extensions) =>
+        extensions.contains(path.split('.').last) &&
+        !path.startsWith('meta-inf/') &&
+        !path.endsWith('.opf');
+
+    var pages = files.keys
+        .where((path) => isPage(path, {'html', 'htm', 'xhtml'}))
+        .toList()
+      ..sort(naturalCompare);
+    var imagesOnly = false;
+    if (pages.isEmpty) {
+      pages = files.keys.where((path) => isPage(path, imageMedia.keys.toSet())).toList()
+        ..sort(naturalCompare);
+      imagesOnly = true;
+    }
+    if (pages.isEmpty) {
+      final sample = files.keys.take(8).join('、');
+      throw FormatException(
+        'EPUB 缺少书籍索引，压缩包内未发现 OPF/HTML/图片（条目示例：$sample）',
+      );
+    }
+    final manifest = <String>[];
+    final spine = <String>[];
+    for (var index = 0; index < pages.length; index++) {
+      final id = 'g${index + 1}';
+      final href = xmlText(
+        pages[index].split('/').map(Uri.encodeComponent).join('/'),
+      );
+      final type = imagesOnly
+          ? imageMedia[pages[index].split('.').last]!
+          : 'application/xhtml+xml';
+      final cover = imagesOnly && index == 0 ? ' properties="cover-image"' : '';
+      manifest.add(
+        '<item id="$id" href="$href" media-type="$type"$cover/>',
+      );
+      spine.add('<itemref idref="$id"/>');
+    }
+    final title = xmlText(
+      input.name.replaceFirst(RegExp(r'\.[^.]+$'), ''),
+    );
+    final coverMeta = imagesOnly ? '<meta name="cover" content="g1"/>' : '';
+    generatedPackage =
+        '<?xml version="1.0" encoding="utf-8"?>'
+        '<package xmlns="http://www.idpf.org/2007/opf" version="2.0">'
+        '<metadata xmlns:dc="http://purl.org/dc/elements/1.1/">'
+        '<dc:title>$title</dc:title><dc:language>zh</dc:language>$coverMeta'
+        '</metadata><manifest>${manifest.join()}</manifest>'
+        '<spine>${spine.join()}</spine></package>';
   }
   // `base` is already a decoded ZIP filename. Re-encode its segments before
   // using it as a URL, so a literal #, ? or % cannot change relative resolution.
@@ -404,8 +482,10 @@ ImportedBook _epub(
     return Uri.decodeComponent(uri.path.substring(1));
   }
 
-  final opfPath = resolve('', packageReference);
-  final package = XmlDocument.parse(read(opfPath));
+  final opfPath = generatedPackage == null ? resolve('', packageReference!) : '';
+  final package = generatedPackage == null
+      ? XmlDocument.parse(read(opfPath))
+      : XmlDocument.parse(generatedPackage);
   final elements = package.descendants.whereType<XmlElement>().toList();
   String field(String name) =>
       elements

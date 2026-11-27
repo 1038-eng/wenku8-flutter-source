@@ -46,10 +46,26 @@ class PortableBookPreparer {
   }) async {
     onProgress?.call(0, 1);
     try {
+      final lower = name.toLowerCase();
+      // iOS 已内置 libmobi，但 prepareBook 仍是抛错桩；Kindle 文件必须在
+      // 这里显式走 extractKindle，转成统一 EPUB 后再进共享导入链路。
+      if (const ['.mobi', '.azw', '.azw3', '.prc'].any(lower.endsWith)) {
+        await directory.create(recursive: true);
+        final output =
+            '${directory.path}/kindle-${DateTime.now().microsecondsSinceEpoch}.epub';
+        final chapters = await extractKindle(path, output);
+        if (chapters <= 0) throw StateError('Kindle 文档未解析出正文');
+        final epubName = name.replaceFirst(
+          RegExp(r'\.(mobi|azw|azw3|prc)$', caseSensitive: false),
+          '.epub',
+        );
+        onProgress?.call(1, 1);
+        return [(name: epubName, path: output, error: null)];
+      }
       // iOS / Harmony 用原生 PDF 渲染器把每一页转成图片 EPUB。原生侧没有
       // 把它接进 prepareBook（那里是抛错桩），所以必须在这里显式分派，
       // 否则 PDF 会掉进「此平台正在适配此格式」的失败分支。
-      if (extractPdf != null && name.toLowerCase().endsWith('.pdf')) {
+      if (extractPdf != null && lower.endsWith('.pdf')) {
         await directory.create(recursive: true);
         final output =
             '${directory.path}/pdf-${DateTime.now().microsecondsSinceEpoch}.epub';
