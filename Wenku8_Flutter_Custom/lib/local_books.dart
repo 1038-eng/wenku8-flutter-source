@@ -271,17 +271,66 @@ ImportedBook _epub(
   bool normalizeMarkup = true,
 }) {
   final zip = archive ?? boundedZip(input.bytes, maxSize: 1024 * 1024 * 1024);
-  final files = {
-    for (final f in zip)
-      if (f.isFile) f.name: f,
-  };
   final recovery = damagedEntries != null;
   final damage = damagedEntries ?? <String, String>{};
+
+  // Some sources wrap the EPUB payload in one folder or use different entry
+  // case. Canonical keys keep archive paths from escaping while still letting
+  // the importer find resources below a wrapper directory.
+  String normalizeEntry(String path) => path
+      .replaceAll(r'\', '/')
+      .replaceAll(RegExp(r'^(\./)+'), '')
+      .replaceAll(RegExp(r'/+'), '/')
+      .toLowerCase();
+  String entryRoot(String path) {
+    final normalized = normalizeEntry(path);
+    final slash = normalized.lastIndexOf('/');
+    return slash < 0 ? '' : normalized.substring(0, slash + 1);
+  }
+
+  final files = <String, ArchiveFile>{};
+  for (final file in zip) {
+    if (file.isFile) {
+      files.putIfAbsent(normalizeEntry(file.name), () => file);
+    }
+  }
+  String detectRoot() {
+    if (files.containsKey('meta-inf/container.xml')) return '';
+    final containers = files.entries
+        .where((e) => e.key.endsWith('meta-inf/container.xml'))
+        .map((e) => entryRoot(e.value.name))
+        .toList();
+    if (containers.isNotEmpty) {
+      containers.sort((a, b) => a.length.compareTo(b.length));
+      return containers.first;
+    }
+    if (files.containsKey('mimetype')) return '';
+    final packages = files.entries
+        .where((e) => e.key.endsWith('.opf'))
+        .map((e) => entryRoot(e.value.name))
+        .toList();
+    if (packages.isNotEmpty) {
+      packages.sort((a, b) => a.length.compareTo(b.length));
+      return packages.first;
+    }
+    return '';
+  }
+
+  final root = detectRoot();
+  ArchiveFile? fileAt(String path) {
+    final normalized = normalizeEntry(path);
+    final direct = files[normalized];
+    if (direct != null) return direct;
+    if (root.isEmpty) return null;
+    return files[normalizeEntry('$root$path')];
+  }
+
+  bool has(String path) => damage.containsKey(path) || fileAt(path) != null;
   String read(String path) {
     if (damage[path] case final reason?) {
       throw LocalBookArchiveCorruption(path, reason);
     }
-    final file = files[path];
+    final file = fileAt(path);
     if (file == null) throw FormatException('EPUB 缺少资源：$path');
     if (file.size > 8 * 1024 * 1024) {
       throw FormatException('EPUB 文本资源超过 8 MiB：$path');
@@ -294,12 +343,44 @@ ImportedBook _epub(
     }
   }
 
-  final container = XmlDocument.parse(read('META-INF/container.xml'));
-  final packageReference = container.descendants
-      .whereType<XmlElement>()
-      .where((e) => e.name.local == 'rootfile')
-      .firstOrNull
-      ?.getAttribute('full-path');
+  String? fallbackOpf() {
+    final candidates = <String>[];
+    for (final entry in files.entries) {
+      if (!entry.key.endsWith('.opf')) continue;
+      if (root.isEmpty) {
+        candidates.add(entry.key);
+      } else if (entry.key.startsWith(root)) {
+        candidates.add(entry.key.substring(root.length));
+      }
+    }
+    candidates.sort((a, b) {
+      final aPreferred = ['content.opf', 'package.opf'].contains(
+        a.split('/').last,
+      );
+      final bPreferred = ['content.opf', 'package.opf'].contains(
+        b.split('/').last,
+      );
+      if (aPreferred != bPreferred) return aPreferred ? -1 : 1;
+      final depth = a.split('/').length.compareTo(b.split('/').length);
+      return depth != 0 ? depth : a.compareTo(b);
+    });
+    return candidates.firstOrNull;
+  }
+
+  String? packageReference;
+  if (has('META-INF/container.xml')) {
+    try {
+      final container = XmlDocument.parse(read('META-INF/container.xml'));
+      packageReference = container.descendants
+          .whereType<XmlElement>()
+          .where((e) => e.name.local == 'rootfile')
+          .firstOrNull
+          ?.getAttribute('full-path');
+    } on LocalBookArchiveCorruption {
+      // A damaged container can still be bypassed when the OPF is readable.
+    }
+  }
+  packageReference ??= fallbackOpf();
   if (packageReference == null || packageReference.trim().isEmpty) {
     throw const FormatException('EPUB 缺少书籍索引，请重新获取完整原书');
   }
@@ -361,8 +442,7 @@ ImportedBook _epub(
     read(path),
     normalizeEmptyRawText: normalizeMarkup && !htmlPaths.contains(path),
   );
-  if (files.containsKey('META-INF/encryption.xml') ||
-      damage.containsKey('META-INF/encryption.xml')) {
+  if (has('META-INF/encryption.xml')) {
     final encryption = XmlDocument.parse(read('META-INF/encryption.xml'));
     for (final data in encryption.descendants.whereType<XmlElement>().where(
       (e) => e.name.local == 'EncryptedData',
@@ -511,7 +591,7 @@ ImportedBook _epub(
       if (required) throw LocalBookArchiveCorruption(path, reason);
       return null;
     }
-    final file = files[path];
+    final file = fileAt(path);
     final originalExtension = path.split('.').last.toLowerCase();
     final ext =
         ['png', 'jpg', 'jpeg', 'webp', 'gif'].contains(originalExtension)
@@ -715,7 +795,7 @@ ImportedBook _epub(
     final styles = epubStyleProperties(document, (href) {
       try {
         final path = resolve(file.path, href);
-        return files.containsKey(path) ? read(path) : null;
+        return has(path) ? read(path) : null;
       } on FormatException {
         return null;
       }
@@ -753,7 +833,7 @@ ImportedBook _epub(
       try {
         final href = a.attributes['href']!;
         final to = target(file.path, href);
-        if (to.fragment.isEmpty || !files.containsKey(to.path)) continue;
+        if (to.fragment.isEmpty || !has(to.path)) continue;
         if (!noteDocuments.containsKey(to.path)) {
           if (noteDocuments.length >= 3) {
             noteDocuments.remove(
@@ -1055,7 +1135,7 @@ ImportedBook _epub(
           node.querySelector('img, image, p, div, section, br') == null) {
         try {
           final to = target(file.path, node.attributes['href']!);
-          if (files.containsKey(to.path)) {
+          if (has(to.path)) {
             final start = rich.length;
             linkTargets.add(targetKey(to));
             for (final child in node.nodes) {
@@ -1272,8 +1352,7 @@ ImportedBook _epub(
                 : ncx?.path,
             read: read,
             resolve: target,
-            contains: (path) =>
-                files.containsKey(path) || damage.containsKey(path),
+            contains: has,
             warnings: warnings,
             normalizeMarkup:
                 normalizeMarkup && !htmlPaths.contains(epubNav?.path),
